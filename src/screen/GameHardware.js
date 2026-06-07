@@ -1,8 +1,4 @@
-/**
- * GameHardware.js — IoT Circuit Sandbox Mockup
- * Visual: 2D Retro Pixel-Art, NO rounded corners, dark metallic board
- * Spec: Game-Hardware.md
- */
+
 import React, { useState, useEffect } from 'react';
 import {
   View,
@@ -35,10 +31,10 @@ const GROUND_PX = SCENE_H * 0.08;
 
 // ── Sensor catalog ──────────────────────────────────────────────────────────
 const SENSORS = {
-  pir:   { name: 'PIR',   full: 'PIR SENSOR',  desc: 'ตรวจจับการเคลื่อนไหว',  color: '#C0392B', correct: true  },
-  dht11: { name: 'DHT11', full: 'DHT11',        desc: 'วัดอุณหภูมิ/ความชื้น',  color: '#2980B9', correct: false },
-  soil:  { name: 'SOIL',  full: 'SOIL SENSOR',  desc: 'วัดความชื้นในดิน',      color: '#27AE60', correct: false },
-  ldr:   { name: 'LDR',   full: 'LDR SENSOR',   desc: 'ตรวจจับความเข้มแสง',   color: '#D4AC0D', correct: false },
+  pir:   { name: 'PIR',   full: 'PIR SENSOR',  desc: 'ตรวจจับการเคลื่อนไหว',  color: '#C0392B', correct: true,  icon: '👁' },
+  dht11: { name: 'DHT11', full: 'DHT11',        desc: 'วัดอุณหภูมิ/ความชื้น',  color: '#2980B9', correct: false, icon: '🌡' },
+  soil:  { name: 'SOIL',  full: 'SOIL SENSOR',  desc: 'วัดความชื้นในดิน',      color: '#27AE60', correct: false, icon: '🌱' },
+  ldr:   { name: 'LDR',   full: 'LDR SENSOR',   desc: 'ตรวจจับความเข้มแสง',   color: '#D4AC0D', correct: false, icon: '💡' },
 };
 
 // ── Battle frames (steps 1-3) ───────────────────────────────────────────────
@@ -250,27 +246,49 @@ export default function GameHardware() {
             ))}
           </View>
 
-          {/* ESP32 Board */}
-          <View style={s.esp32Board}>
-            <Text style={s.boardTitle}>ESP32-DevKit</Text>
-            <View style={s.boardChip}>
-              <Text style={s.chipLabel}>{'[===]\n[ESP]\n[===]'}</Text>
-            </View>
-            <View style={s.pinRow}>
-              <Text style={s.pinLabel}>GND</Text>
-              <Text style={s.pinLabel}>3V3</Text>
-              <View style={[s.sensorSlot, pluggedSensor && s.sensorSlotActive]}>
-                {pluggedSensor ? (
-                  <Text style={s.slotLabel}>{SENSORS[pluggedSensor].name}</Text>
-                ) : (
-                  <Text style={s.slotEmpty}>GPIO</Text>
-                )}
+          {/* ── PCB Circuit Panel ──────────────────────────────────── */}
+          <View style={s.pcbPanel}>
+            <View style={[s.boltDot, { top: 5, left: 5 }]} />
+            <View style={[s.boltDot, { top: 5, right: 5 }]} />
+            <View style={[s.boltDot, { bottom: 5, left: 5 }]} />
+            <View style={[s.boltDot, { bottom: 5, right: 5 }]} />
+
+            <View style={s.pcbRow}>
+              {/* ESP32 box */}
+              <View style={s.esp32Box}>
+                <Text style={s.pcbCompIcon}>⚙</Text>
+                <Text style={s.esp32Name}>ESP32</Text>
+                <Text style={s.esp32Sub}>CORE</Text>
+              </View>
+
+              {/* Wire connections */}
+              <View style={s.pcbWires}>
+                {[
+                  { l: 'GPIO 2', r: 'SIG' },
+                  { l: '3V3',    r: 'VCC' },
+                  { l: 'GND',    r: 'GND' },
+                ].map(({ l, r }) => (
+                  <View key={l} style={s.pcbWireRow}>
+                    <Text style={s.pcbPinL}>{l}</Text>
+                    <View style={s.pcbDotL} />
+                    <View style={[s.pcbSeg, pluggedSensor ? s.pcbSegOn : s.pcbSegOff]} />
+                    <View style={[s.pcbDotR, !pluggedSensor && s.pcbDotDim]} />
+                    <Text style={[s.pcbPinR, !pluggedSensor && s.pcbPinDim]}>{r}</Text>
+                  </View>
+                ))}
+              </View>
+
+              {/* Sensor box */}
+              <View style={[s.sensorBox, { borderColor: pluggedSensor ? SENSORS[pluggedSensor].color : '#444' }]}>
+                <Text style={s.pcbCompIcon}>
+                  {pluggedSensor ? SENSORS[pluggedSensor].icon : '?'}
+                </Text>
+                <Text style={[s.sensorBoxName, { color: pluggedSensor ? SENSORS[pluggedSensor].color : '#555' }]}>
+                  {pluggedSensor ? SENSORS[pluggedSensor].name : '???'}
+                </Text>
+                <Text style={s.sensorBoxSub}>SENSOR</Text>
               </View>
             </View>
-            {/* Wire from slot to sensor (visual only) */}
-            {pluggedSensor && (
-              <View style={s.wire} />
-            )}
           </View>
 
           {/* Cat sprite */}
@@ -521,37 +539,53 @@ const s = StyleSheet.create({
     backgroundColor: 'rgba(46,125,50,0.2)',
   },
 
-  // ESP32 board
-  esp32Board: {
+  // PCB circuit panel
+  pcbPanel: {
     position: 'absolute',
-    right: SW * 0.05,
-    top: SCENE_H * 0.1,
-    width: SW * 0.38,
-    backgroundColor: '#1a3a1a',
-    borderWidth: 3, borderColor: '#2E7D32',
-    padding: 8, gap: 6,
-    alignItems: 'center',
+    top: 8, left: 8, right: 8,
+    height: SCENE_H * 0.54,
+    backgroundColor: '#120e08',
+    borderWidth: 3, borderColor: '#6B4226',
+    padding: 10,
+    justifyContent: 'center',
   },
-  boardTitle: { ...MONO, color: '#a5d6a7', fontSize: 9, fontWeight: '700', letterSpacing: 1 },
-  boardChip: {
-    backgroundColor: '#0a1a0a', borderWidth: 2, borderColor: '#4CAF50',
-    paddingHorizontal: 10, paddingVertical: 6, alignItems: 'center',
+  boltDot: {
+    position: 'absolute',
+    width: 8, height: 8,
+    backgroundColor: '#8B6914',
+    borderWidth: 1, borderColor: '#5a4010',
   },
-  chipLabel: { ...MONO, color: '#4CAF50', fontSize: 9, textAlign: 'center', lineHeight: 13 },
-  pinRow: { flexDirection: 'row', gap: 6, alignItems: 'center', marginTop: 4 },
-  pinLabel: { ...MONO, color: '#81C784', fontSize: 8, fontWeight: '700' },
-  sensorSlot: {
-    borderWidth: 2, borderColor: '#555', borderStyle: 'dashed',
-    paddingHorizontal: 6, paddingVertical: 4,
-    backgroundColor: '#111',
+  pcbRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  esp32Box: {
+    backgroundColor: '#0d200d',
+    borderWidth: 2, borderColor: '#2E7D32',
+    paddingHorizontal: 8, paddingVertical: 8,
+    alignItems: 'center', gap: 2,
+    minWidth: SW * 0.18,
   },
-  sensorSlotActive: { borderColor: '#4CAF50', borderStyle: 'solid', backgroundColor: '#0d2a0d' },
-  slotLabel: { ...MONO, color: '#4CAF50', fontSize: 8, fontWeight: '700' },
-  slotEmpty: { ...MONO, color: '#555', fontSize: 8 },
-  wire: {
-    position: 'absolute', bottom: -3, left: '30%',
-    width: '40%', height: 3, backgroundColor: '#E8A020',
+  pcbCompIcon: { fontSize: 18 },
+  esp32Name: { ...MONO, color: '#4CAF50', fontSize: 9, fontWeight: '700' },
+  esp32Sub:  { ...MONO, color: '#81C784', fontSize: 8 },
+  pcbWires: { flex: 1, gap: 8 },
+  pcbWireRow: { flexDirection: 'row', alignItems: 'center', gap: 3 },
+  pcbPinL: { ...MONO, color: '#4CAF50', fontSize: 7, fontWeight: '700', width: 36, textAlign: 'right' },
+  pcbPinR: { ...MONO, color: '#ccc', fontSize: 7, width: 24 },
+  pcbPinDim: { color: '#333' },
+  pcbDotL: { width: 8, height: 8, backgroundColor: '#2E7D32', borderWidth: 1, borderColor: '#4CAF50' },
+  pcbDotR: { width: 8, height: 8, backgroundColor: '#8B2020', borderWidth: 1, borderColor: '#D94040' },
+  pcbDotDim: { opacity: 0.3 },
+  pcbSeg: { flex: 1, height: 3 },
+  pcbSegOn: { backgroundColor: '#E8A020' },
+  pcbSegOff: { backgroundColor: '#2a2a2a' },
+  sensorBox: {
+    borderWidth: 2,
+    paddingHorizontal: 8, paddingVertical: 8,
+    alignItems: 'center', gap: 2,
+    minWidth: SW * 0.18,
+    backgroundColor: '#1a0808',
   },
+  sensorBoxName: { ...MONO, fontSize: 9, fontWeight: '700' },
+  sensorBoxSub:  { ...MONO, color: '#888', fontSize: 8 },
 
   // Characters
   playerPos: { position: 'absolute', left: SW * 0.05, bottom: GROUND_PX },

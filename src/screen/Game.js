@@ -10,6 +10,8 @@ import {
   ScrollView,
   Dimensions,
 } from 'react-native';
+import { Esp32Board, SensorModule, ESP_VB, ESP_PADS, SENSOR_VB, SENSOR_PADS } from './HardwareArt';
+import Svg, { Path } from 'react-native-svg';
 
 const { width: SW } = Dimensions.get('window');
 
@@ -339,7 +341,95 @@ const CORRECT_WIRES = [
   { from:'sen_gnd', to:'esp_gnd' },
 ];
 
-// ── Wire renderer — orthogonal Z-routing ─────────────────────────────────────
+// Per-signal wire colours (keyed by the sensor pin = conn.from).
+// Red is reserved for wrong wires, so power uses orange.
+const WIRE_PALETTE = {
+  sen_sig: '#2EC8C0', // signal  → teal
+  sen_vcc: '#F2901E', // power   → orange
+  sen_gnd: '#9AA7B5', // ground  → grey
+};
+const WIRE_ERROR = '#FF3B30';
+const WIRE_LEGEND = [
+  { c: WIRE_PALETTE.sen_sig, label: 'สัญญาณ (SIG)' },
+  { c: WIRE_PALETTE.sen_vcc, label: 'ไฟเลี้ยง (VCC)' },
+  { c: WIRE_PALETTE.sen_gnd, label: 'กราวด์ (GND)' },
+];
+
+// ── Auto wire router ─────────────────────────────────────────────────────────
+// You never draw wires by hand — just declare connections {from,to} as data and
+// this builds a clean, non-overlapping path between the two measured pins.
+// Each wire gets its own vertical "lane" in the gap so wires never sit on top
+// of each other (sorted by mid-height to minimise crossings).
+function roundedPath(pts, r = 7) {
+  if (!pts.length) return '';
+  let d = `M ${pts[0][0]} ${pts[0][1]}`;
+  for (let i = 1; i < pts.length - 1; i++) {
+    const [px, py] = pts[i - 1], [cx, cy] = pts[i], [nx, ny] = pts[i + 1];
+    const v1x = cx - px, v1y = cy - py, l1 = Math.hypot(v1x, v1y) || 1;
+    const v2x = nx - cx, v2y = ny - cy, l2 = Math.hypot(v2x, v2y) || 1;
+    const rr = Math.min(r, l1 / 2, l2 / 2);
+    d += ` L ${cx - (v1x / l1) * rr} ${cy - (v1y / l1) * rr}`;
+    d += ` Q ${cx} ${cy} ${cx + (v2x / l2) * rr} ${cy + (v2y / l2) * rr}`;
+  }
+  const last = pts[pts.length - 1];
+  d += ` L ${last[0]} ${last[1]}`;
+  return d;
+}
+
+// items: [{ s:{x,y}, e:{x,y}, color }]  →  [{ d, color }]
+function routeWires(items) {
+  if (!items.length) return [];
+  const espX = Math.max(...items.map(it => it.s.x));
+  const senX = Math.min(...items.map(it => it.e.x));
+  let gapL = espX + 14, gapR = senX - 14;
+  if (gapR < gapL) { const m = (espX + senX) / 2; gapL = gapR = m; } // tight fallback
+  const sorted = [...items].sort((a, b) => (a.s.y + a.e.y) - (b.s.y + b.e.y));
+  const n = sorted.length;
+  sorted.forEach((it, idx) => {
+    const t = n === 1 ? 0.5 : idx / (n - 1);
+    it.laneX = gapL + (gapR - gapL) * t;
+  });
+  return items.map(it => ({
+    color: it.color,
+    d: roundedPath([[it.s.x, it.s.y], [it.laneX, it.s.y], [it.laneX, it.e.y], [it.e.x, it.e.y]]),
+  }));
+}
+
+function WireLayer({ wires, width, height }) {
+  if (!width || !height) return null;
+  return (
+    <Svg pointerEvents="none" style={{ position: 'absolute', left: 0, top: 0 }} width={width} height={height}>
+      {wires.map((w, i) => (
+        <Path key={i} d={w.d} stroke={w.color} strokeWidth={5} fill="none" strokeLinejoin="round" strokeLinecap="round" />
+      ))}
+    </Svg>
+  );
+}
+
+// ── Wire renderer — vertical-first routing (ESP on top → sensor below) ───────
+// V1 (down) → H (across, at a staggered mid-Y) → V2 (down into sensor pin)
+function CpWireV({ x1, y1, x2, y2, color = '#C97D10', offset = 0 }) {
+  const T = 5;
+  const R = T / 2;
+  let my = Math.min(y1, y2) + 16 + offset;          // staggered crossbar
+  const maxMy = Math.max(y1, y2) - 8;
+  if (my > maxMy) my = (y1 + y2) / 2;
+  const s = (extra) => ({ position: 'absolute', backgroundColor: color, ...extra });
+  const vTop = Math.min(y1, my), vH = Math.abs(my - y1);
+  const v2Top = Math.min(my, y2), v2H = Math.abs(y2 - my);
+
+  return (
+    <>
+      {/* V1: y1 → my at x1 */}
+      <View pointerEvents="none" style={s({ left: x1 - R, top: vTop - R, width: T, height: vH + T })} />
+      {/* H: x1 → x2 at my */}
+      <View pointerEvents="none" style={s({ left: Math.min(x1, x2) - R, top: my - R, width: Math.abs(x2 - x1) + T, height: T })} />
+      {/* V2: my → y2 at x2 */}
+      <View pointerEvents="none" style={s({ left: x2 - R, top: v2Top - R, width: T, height: v2H + T })} />
+    </>
+  );
+}
+
 function CpWire({ x1, y1, x2, y2, color = '#C97D10' }) {
   const T    = 5;
   const R    = T / 2;
@@ -392,6 +482,19 @@ function CircuitPuzzle({ onSuccess, onClose }) {
   const boardRef = useRef(null);
   const pinRefs  = useRef({});
   const [pinPos, setPinPos] = useState({}); // { [id]: { x, y } }
+
+  // Live board size → scales the device art to fit any screen.
+  const [boardSize, setBoardSize] = useState({ w: SW - 28, h: 380 });
+
+  // Brief feedback when the player taps a locked (unused) pin.
+  const [lockedHint, setLockedHint] = useState(false);
+  const lockTimer = useRef(null);
+  const handleLockedTap = () => {
+    setLockedHint(true);
+    if (lockTimer.current) clearTimeout(lockTimer.current);
+    lockTimer.current = setTimeout(() => setLockedHint(false), 1700);
+  };
+  useEffect(() => () => { if (lockTimer.current) clearTimeout(lockTimer.current); }, []);
 
   const measurePin = (id) => {
     const node  = pinRefs.current[id];
@@ -471,8 +574,59 @@ function CircuitPuzzle({ onSuccess, onClose }) {
     setResult(null); setWrongIds([]);
   };
 
-  const wireColor = (conn) => wrongIds.includes(conn.from) ? '#D94040' : '#C97D10';
+  const wireColor = (conn) => wrongIds.includes(conn.from) ? WIRE_ERROR : (WIRE_PALETTE[conn.from] || '#C97D10');
+  // Colour for a pin's connected ring (matches the wire attached to it)
+  const connColorFor = (pinId) => {
+    const c = connections.find(x => x.from === pinId || x.to === pinId);
+    if (!c) return null;
+    return wrongIds.includes(c.from) ? WIRE_ERROR : (WIRE_PALETTE[c.from] || '#C97D10');
+  };
   const sensor = SENSORS.find(s => s.id === selectedSensor);
+
+  // ── Adaptive sizing: ESP32 (vertical) on left, sensor on right ───────
+  const BPAD = 16;
+  const contentW = Math.max(200, boardSize.w - BPAD * 2);
+  const contentH = Math.max(200, boardSize.h - BPAD * 2);
+
+  let espH = contentH;                          // try to fill height
+  let espW = espH * ESP_VB.w / ESP_VB.h;
+  const espMaxW = contentW * 0.46;              // ...but leave room for sensor
+  if (espW > espMaxW) { espW = espMaxW; espH = espW * ESP_VB.h / ESP_VB.w; }
+  const sE = espW / ESP_VB.w;
+
+  let senW = contentW * 0.40;
+  let senH = senW * SENSOR_VB.h / SENSOR_VB.w;
+  if (senH > contentH) { senH = contentH; senW = senH * SENSOR_VB.w / SENSOR_VB.h; }
+  const sS = senW / SENSOR_VB.w;
+
+  // Touch-zone sizing: keep each pin's tap area shorter than the pin pitch so
+  // neighbouring pins never overlap (the cause of "only the top pin is tappable").
+  const espPitchPx = (() => {
+    const r = ESP_PADS.filter(p => p.side === 'R');
+    return (r.length > 1 ? r[1].y - r[0].y : 16) * sE;
+  })();
+  const senPitchPx = (SENSOR_PADS.length > 1 ? SENSOR_PADS[1].y - SENSOR_PADS[0].y : 18) * sS;
+  const espHitH = Math.max(11, Math.min(36, espPitchPx - 2));
+  const senHitH = Math.max(11, Math.min(36, senPitchPx - 2));
+  const HIT_W = 48;
+
+  const espLeft = BPAD;
+  const espTop  = BPAD + (contentH - espH) / 2;
+  const senLeft = BPAD + contentW - senW;
+  const senTop  = BPAD + (contentH - senH) / 2;
+
+  const senLabel = (id) => (sensor?.pins ?? []).find(p => p.id === id)?.label ?? '';
+
+  // Auto-routed wires (data → path). ESP pin = conn.to, sensor pin = conn.from.
+  const boardInnerW = Math.max(0, boardSize.w - BOARD_BORDER * 2);
+  const boardInnerH = Math.max(0, boardSize.h - BOARD_BORDER * 2);
+  const wireData = routeWires(
+    connections.map(conn => {
+      const s = getPinPos(conn.to), e = getPinPos(conn.from);
+      if (!s || !e) return null;
+      return { s, e, color: wireColor(conn) };
+    }).filter(Boolean)
+  );
 
   return (
     <View style={cp.screen}>
@@ -492,7 +646,7 @@ function CircuitPuzzle({ onSuccess, onClose }) {
         <Text style={cp.parchmentTxt}>
           {!selectedSensor
             ? '"เลือกเซนเซอร์ที่ใช้ตรวจจับการเคลื่อนไหว แล้วต่อสายให้ถูกต้อง"'
-            : '"แตะจุด ● บนเซนเซอร์ → แตะจุด ● บน ESP32 เพื่อลากสาย"'}
+            : '"แตะขาที่เรืองแสง (3V3 / GND / D2) บน ESP32 → แตะขาบนเซนเซอร์ทางขวา"'}
         </Text>
       </View>
 
@@ -501,130 +655,165 @@ function CircuitPuzzle({ onSuccess, onClose }) {
         ref={boardRef}
         style={cp.board}
         collapsable={false}
+        onLayout={(e) => { const l = e?.nativeEvent?.layout; if (l) setBoardSize({ w: l.width, h: l.height }); }}
       >
         {/* Corner rivets */}
         {[{top:6,left:6},{top:6,right:6},{bottom:6,left:6},{bottom:6,right:6}].map((pos,i) => (
           <View key={i} style={[cp.rivet, pos]} />
         ))}
 
-        {/* Wires */}
-        {connections.map((conn, i) => {
-          const f = getPinPos(conn.from), t = getPinPos(conn.to);
-          if (!f || !t) return null;
-          return <CpWire key={i} x1={f.x} y1={f.y} x2={t.x} y2={t.y} color={wireColor(conn)} />;
-        })}
+        {/* Wires — auto-routed lanes, drawn as one SVG layer */}
+        <WireLayer wires={wireData} width={boardInnerW} height={boardInnerH} />
 
-        {/* LEFT column — ESP32 */}
-        <View style={cp.espCol}>
-          <View style={cp.chipCard}>
-            <Text style={cp.chipIconTxt}>⚙</Text>
-            <Text style={cp.chipNameTxt}>ESP32{'\n'}CORE</Text>
-          </View>
-          {ESP32_PINS.map(pin => {
-            const isActive = activePinId === pin.id;
-            const isConn   = connections.some(c => c.to === pin.id);
+        {/* LEFT — ESP32 DevKit (30 pins; only 3V3 / GND / D2 are usable) */}
+        <View style={[cp.device, { left: espLeft, top: espTop, width: espW, height: espH }]}>
+          <Esp32Board w={espW} />
+          {ESP_PADS.map(p => {
+            const cx = p.x * sE, cy = p.y * sE;
+            if (!p.active) {
+              return (
+                <TouchableOpacity
+                  key={p.key}
+                  onPress={handleLockedTap}
+                  activeOpacity={0.6}
+                  style={[cp.lockHotspot, { left: cx - 11, top: cy - espHitH / 2, width: 22, height: espHitH }]}
+                />
+              );
+            }
+            const isActive = activePinId === p.id;
+            const isConn   = connections.some(c => c.to === p.id);
             return (
-              <TouchableOpacity
-                key={pin.id}
-                onPress={() => handlePinTap(pin.id)}
-                style={cp.pinRowLeft}
-                activeOpacity={0.7}
-              >
-                <Text style={cp.pinLabelLeft}>{pin.label}</Text>
+              <React.Fragment key={p.key}>
+                {/* wide touch zone, extends LEFT into the board (stays in bounds) */}
+                <TouchableOpacity
+                  onPress={() => handlePinTap(p.id)}
+                  activeOpacity={0.7}
+                  style={[cp.hitZone, { left: cx - HIT_W + 12, top: cy - espHitH / 2, width: HIT_W, height: espHitH }]}
+                />
+                {/* the visible pad dot, pinned exactly on the pin */}
                 <View
-                  ref={(r) => { if (r) pinRefs.current[pin.id] = r; }}
-                  onLayout={() => measurePin(pin.id)}
+                  pointerEvents="none"
+                  ref={(r) => { if (r) pinRefs.current[p.id] = r; }}
+                  onLayout={() => measurePin(p.id)}
                   collapsable={false}
                   style={[
-                    cp.pinDot, cp.pinDotGreen,
-                    isActive && cp.pinDotActive,
-                    isConn   && cp.pinDotConnected,
+                    cp.connDot, cp.connDotEsp,
+                    { left: cx - 9, top: cy - 9 },
+                    isActive && cp.connDotActive,
+                    isConn   && cp.connDotConnected,
+                    isConn   && { borderColor: connColorFor(p.id) },
                   ]}
                 />
-              </TouchableOpacity>
+              </React.Fragment>
             );
           })}
         </View>
 
-        {/* Middle — spacer so wires cross freely */}
-        <View style={{ flex: 1 }} />
-
-        {/* RIGHT column — Sensor */}
-        <View style={cp.senCol}>
-          {selectedSensor && sensor ? (
-            <>
-              <View style={[cp.chipCard, { borderColor: sensor.color }]}>
-                <Text style={cp.chipIconTxt}>{sensor.icon}</Text>
-                <Text style={[cp.chipNameTxt, { color: sensor.color }]}>{sensor.label}</Text>
-              </View>
-              {sensor.pins.map(pin => {
-                const isActive = activePinId === pin.id;
-                const isConn   = connections.some(c => c.from === pin.id);
-                return (
+        {/* RIGHT — Sensor module */}
+        {selectedSensor && sensor ? (
+          <View style={[cp.device, { left: senLeft, top: senTop, width: senW, height: senH }]}>
+            <SensorModule type={sensor.id} w={senW} labels={SENSOR_PADS.map(p => senLabel(p.id))} />
+            {SENSOR_PADS.map(p => {
+              const cx = p.x * sS, cy = p.y * sS;
+              const isActive = activePinId === p.id;
+              const isConn   = connections.some(c => c.from === p.id);
+              return (
+                <React.Fragment key={p.id}>
+                  {/* wide touch zone, extends RIGHT into the module body */}
                   <TouchableOpacity
-                    key={pin.id}
-                    onPress={() => handlePinTap(pin.id)}
-                    style={cp.pinRowRight}
+                    onPress={() => handlePinTap(p.id)}
                     activeOpacity={0.7}
-                  >
-                    <View
-                      ref={(r) => { if (r) pinRefs.current[pin.id] = r; }}
-                      onLayout={() => measurePin(pin.id)}
-                      collapsable={false}
-                      style={[
-                        cp.pinDot, { backgroundColor: sensor.color },
-                        isActive && cp.pinDotActive,
-                        isConn   && cp.pinDotConnected,
-                        wrongIds.includes(pin.id) && cp.pinDotWrong,
-                      ]}
-                    />
-                    <Text style={cp.pinLabelRight}>{pin.label}</Text>
+                    style={[cp.hitZone, { left: Math.max(0, cx - 12), top: cy - senHitH / 2, width: HIT_W, height: senHitH }]}
+                  />
+                  <View
+                    pointerEvents="none"
+                    ref={(r) => { if (r) pinRefs.current[p.id] = r; }}
+                    onLayout={() => measurePin(p.id)}
+                    collapsable={false}
+                    style={[
+                      cp.connDot, { backgroundColor: sensor.color },
+                      { left: cx - 9, top: cy - 9 },
+                      isActive && cp.connDotActive,
+                      isConn   && cp.connDotConnected,
+                      isConn   && { borderColor: connColorFor(p.id) },
+                      wrongIds.includes(p.id) && cp.connDotWrong,
+                    ]}
+                  />
+                </React.Fragment>
+              );
+            })}
+          </View>
+        ) : (
+          <View style={[cp.emptyDevice, { left: senLeft, top: senTop, width: senW, height: senH }]}>
+            <Text style={cp.emptySlotQ}>?</Text>
+            <Text style={cp.emptySlotTxt}>เลือก{'\n'}เซนเซอร์</Text>
+          </View>
+        )}
+
+        {/* ── Result overlay (absolute → doesn't push the board) ──────── */}
+        {result && (
+          <View style={cp.resultOverlay} pointerEvents="box-none">
+            <View style={cp.resultCard}>
+              {result === 'correct' ? (
+                <>
+                  <Text style={cp.feedbackOk}>✅  วงจรสมบูรณ์! ประตูเปิดแล้ว</Text>
+                  <TouchableOpacity style={cp.nextBtn} onPress={onSuccess}>
+                    <Text style={cp.nextBtnTxt}>ต่อไป  ▶</Text>
                   </TouchableOpacity>
-                );
-              })}
-            </>
-          ) : (
-            <View style={cp.emptySlot}>
-              <Text style={cp.emptySlotQ}>?</Text>
-              <Text style={cp.emptySlotTxt}>เลือก{'\n'}เซนเซอร์</Text>
+                </>
+              ) : (
+                <>
+                  <Text style={cp.feedbackBad}>
+                    {result === 'wrong_sensor'
+                      ? '❌  เซนเซอร์ผิดประเภท — ต้องใช้เซนเซอร์ตรวจจับการเคลื่อนไหว'
+                      : '❌  การต่อสายไม่ถูกต้อง ตรวจสอบขาที่ต่ออีกครั้ง'}
+                  </Text>
+                  <TouchableOpacity style={cp.retryBtn} onPress={handleReset}>
+                    <Text style={cp.retryBtnTxt}>รีเซ็ตสาย</Text>
+                  </TouchableOpacity>
+                </>
+              )}
             </View>
-          )}
-        </View>
+          </View>
+        )}
       </View>
 
-      {/* ── Active pin hint ──────────────────────────── */}
-      {activePinId && !result && (
-        <View style={cp.hintStrip}>
-          <Text style={cp.hintStripTxt}>
-            📍 เลือก {activePinId.replace('_',' ').toUpperCase()} แล้ว — แตะขาฝั่งตรงข้ามเพื่อต่อสาย
-          </Text>
+      {/* ── Wire colour legend ───────────────────────── */}
+      {selectedSensor && (
+        <View style={cp.legend}>
+          {WIRE_LEGEND.map((it, i) => (
+            <View key={i} style={cp.legendItem}>
+              <View style={[cp.legendDot, { backgroundColor: it.c }]} />
+              <Text style={cp.legendTxt}>{it.label}</Text>
+            </View>
+          ))}
         </View>
       )}
 
-      {/* ── Result feedback ──────────────────────────── */}
-      {result && (
-        <View style={cp.feedbackBox}>
-          {result === 'correct' ? (
-            <>
-              <Text style={cp.feedbackOk}>✅  วงจรสมบูรณ์! ประตูเปิดแล้ว</Text>
-              <TouchableOpacity style={cp.nextBtn} onPress={onSuccess}>
-                <Text style={cp.nextBtnTxt}>ต่อไป  ▶</Text>
-              </TouchableOpacity>
-            </>
-          ) : (
-            <>
-              <Text style={cp.feedbackBad}>
-                {result === 'wrong_sensor'
-                  ? '❌  เซนเซอร์ผิดประเภท — ต้องใช้เซนเซอร์ตรวจจับการเคลื่อนไหว'
-                  : '❌  การต่อสายไม่ถูกต้อง ตรวจสอบขาที่ต่ออีกครั้ง'}
-              </Text>
-              <TouchableOpacity style={cp.retryBtn} onPress={handleReset}>
-                <Text style={cp.retryBtnTxt}>รีเซ็ตสาย</Text>
-              </TouchableOpacity>
-            </>
-          )}
-        </View>
-      )}
+      {/* ── Status bar (fixed height → never reflows the board) ───────── */}
+      <View style={cp.statusBar}>
+        {result ? (
+          <Text style={[cp.statusTxt, { color: result === 'correct' ? '#4CAF50' : '#E8908F' }]} numberOfLines={1}>
+            {result === 'correct'
+              ? '✅ วงจรสมบูรณ์! ประตูเปิดแล้ว'
+              : result === 'wrong_sensor'
+                ? '❌ เซนเซอร์ผิดประเภท'
+                : '❌ การต่อสายไม่ถูกต้อง'}
+          </Text>
+        ) : activePinId ? (
+          <Text style={[cp.statusTxt, { color: '#FFD700' }]} numberOfLines={1}>
+            📍 เลือก {activePinId.replace('_', ' ').toUpperCase()} แล้ว — แตะขาฝั่งตรงข้าม
+          </Text>
+        ) : lockedHint ? (
+          <Text style={[cp.statusTxt, { color: '#E8908F' }]} numberOfLines={1}>
+            🔒 ขานี้ถูกล็อก — ต่อได้เฉพาะขาที่เรืองแสง
+          </Text>
+        ) : (
+          <Text style={[cp.statusTxt, { color: '#888' }]} numberOfLines={1}>
+            แตะขาเรืองแสงบน ESP32 แล้วแตะขาบนเซนเซอร์
+          </Text>
+        )}
+      </View>
 
       {/* ── Sensor inventory ─────────────────────────── */}
       <View style={cp.inventory}>
@@ -637,7 +826,9 @@ function CircuitPuzzle({ onSuccess, onClose }) {
               onPress={() => handlePickSensor(s.id)}
               activeOpacity={0.75}
             >
-              <Text style={cp.inventoryIcon}>{s.icon}</Text>
+              <View style={cp.invArt}>
+                <SensorModule type={s.id} w={38} />
+              </View>
               <Text style={[cp.inventoryName, selectedSensor === s.id && cp.inventoryNameActive]}>
                 {s.name}
               </Text>
@@ -694,15 +885,85 @@ const cp = StyleSheet.create({
     borderRadius: 10, borderWidth: 2.5, borderColor: '#5A3010',
     marginHorizontal: 14, marginTop: 12,
     padding: 16,
-    flexDirection: 'row',
+    position: 'relative',
   },
   rivet: {
     position: 'absolute', width: 8, height: 8,
     borderRadius: 4, backgroundColor: '#5A3010',
   },
 
+  // Device containers (art + overlaid tappable pins)
+  device: { position: 'absolute' },
+  emptyDevice: {
+    position: 'absolute',
+    borderWidth: 2, borderColor: '#333', borderRadius: 8,
+    alignItems: 'center', justifyContent: 'center', backgroundColor: '#111',
+  },
+  hotspot: {
+    position: 'absolute', width: 34, height: 34,
+    alignItems: 'center', justifyContent: 'center', zIndex: 5,
+  },
+  hitZone: {
+    position: 'absolute', zIndex: 6, backgroundColor: 'transparent',
+  },
+  lockHotspot: {
+    position: 'absolute', zIndex: 4,
+  },
+  legend: {
+    flexDirection: 'row', justifyContent: 'center', flexWrap: 'wrap',
+    marginHorizontal: 14, marginTop: 8, gap: 14,
+  },
+  legendItem: { flexDirection: 'row', alignItems: 'center', gap: 5 },
+  legendDot: { width: 14, height: 6, borderRadius: 3 },
+  legendTxt: { color: '#bbb', fontSize: 11, fontWeight: '600' },
+  statusBar: {
+    height: 30, justifyContent: 'center', alignItems: 'center',
+    marginHorizontal: 14, marginTop: 8,
+  },
+  statusTxt: { fontSize: 12, fontWeight: '600', textAlign: 'center' },
+  resultOverlay: {
+    position: 'absolute', left: 0, right: 0, bottom: 0, top: 0,
+    alignItems: 'center', justifyContent: 'flex-end', padding: 14,
+  },
+  resultCard: {
+    width: '100%',
+    backgroundColor: 'rgba(22,27,34,0.96)',
+    borderRadius: 12, borderWidth: 1.5, borderColor: '#3a3a4c',
+    padding: 14, alignItems: 'center', gap: 10,
+  },
+  connDot: {
+    position: 'absolute', zIndex: 5,
+    width: 18, height: 18, borderRadius: 9,
+    borderWidth: 2, borderColor: '#fff',
+  },
+  connDotEsp:       { backgroundColor: '#2E7D32' },
+  connDotActive:    { borderColor: '#FFD700', borderWidth: 3, transform: [{ scale: 1.28 }] },
+  connDotConnected: { borderColor: '#C97D10', borderWidth: 3 },
+  connDotWrong:     { borderColor: '#D94040', borderWidth: 3 },
+  pinPill: {
+    position: 'absolute', zIndex: 6,
+    backgroundColor: 'rgba(13,17,22,0.86)',
+    borderRadius: 5, paddingHorizontal: 5, paddingVertical: 2,
+  },
+  pinPillTxt: { color: '#8FE6A8', fontSize: 10, fontWeight: '700' },
+  hintStripLock: { borderLeftColor: '#D94040', backgroundColor: '#2a1212' },
+
   // ESP32 column
   espCol: { width: 110, gap: 0 },
+  chipArt: {
+    width: '100%',
+    height: 132,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 10,
+  },
+  chipName: {
+    color: '#4CAF50', fontSize: 9, fontWeight: 'bold',
+    letterSpacing: 0.5, marginTop: 3, textAlign: 'center',
+  },
+  invArt: {
+    height: 44, alignItems: 'center', justifyContent: 'center',
+  },
   chipCard: {
     width: '100%',
     backgroundColor: '#0D2010',

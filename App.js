@@ -1,5 +1,5 @@
 import { StatusBar } from 'expo-status-bar';
-import Game from './Game';
+import Game from './src/screen/Game';
 
 export default function App() {
   return (
