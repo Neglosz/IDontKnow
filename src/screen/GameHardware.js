@@ -12,8 +12,6 @@ import {
 } from 'react-native';
 
 const { width: SW } = Dimensions.get('window');
-
-// ── Sprite constants ────────────────────────────────────────────────────────
 const CAT_FRAMES = 3;
 const CAT_W = 80;
 const CAT_H = 80;
@@ -21,23 +19,17 @@ const CAT_FPS = 6;
 
 const ORC_W = 150;
 const ORC_H = 175;
-const _orcAsset = Image.resolveAssetSource(require('./assets/npc_orc-sheet.png'));
+const _orcAsset = Image.resolveAssetSource(require('../../assets/npc_orc-sheet.png'));
 const ORC_FRAMES = Math.round(_orcAsset.width / ORC_W);
 const ORC_FPS = 5;
-
-// ── Scene sizing (from background aspect ratio) ─────────────────────────────
 const SCENE_H = SW * 0.52;
 const GROUND_PX = SCENE_H * 0.08;
-
-// ── Sensor catalog ──────────────────────────────────────────────────────────
 const SENSORS = {
   pir:   { name: 'PIR',   full: 'PIR SENSOR',  desc: 'ตรวจจับการเคลื่อนไหว',  color: '#C0392B', correct: true,  icon: '👁' },
   dht11: { name: 'DHT11', full: 'DHT11',        desc: 'วัดอุณหภูมิ/ความชื้น',  color: '#2980B9', correct: false, icon: '🌡' },
   soil:  { name: 'SOIL',  full: 'SOIL SENSOR',  desc: 'วัดความชื้นในดิน',      color: '#27AE60', correct: false, icon: '🌱' },
   ldr:   { name: 'LDR',   full: 'LDR SENSOR',   desc: 'ตรวจจับความเข้มแสง',   color: '#D4AC0D', correct: false, icon: '💡' },
 };
-
-// ── Battle frames (steps 1-3) ───────────────────────────────────────────────
 const BATTLE_FRAMES = [
   {
     npc: 'ช่างกล Pippo',
@@ -69,8 +61,6 @@ const BATTLE_FRAMES = [
     correctSensor: 'pir',
   },
 ];
-
-// ── Sprite animation hook ───────────────────────────────────────────────────
 function useSpriteAnim(frameCount, fps = 8) {
   const [frame, setFrame] = useState(0);
   useEffect(() => {
@@ -79,8 +69,6 @@ function useSpriteAnim(frameCount, fps = 8) {
   }, [frameCount, fps]);
   return frame;
 }
-
-// ════════════════════════════════════════════════════════════════════════════
 export default function GameHardware() {
   const [step, setStep]                   = useState(0);
   const [selectedSensor, setSelected]     = useState(null);
@@ -121,8 +109,6 @@ export default function GameHardware() {
     setSelected(null);
     setPlugged(null);
   };
-
-  // ── Step 0: Intro ──────────────────────────────────────────────────────────
   if (step === 0) {
     return (
       <SafeAreaView style={s.safe}>
@@ -169,8 +155,6 @@ export default function GameHardware() {
       </SafeAreaView>
     );
   }
-
-  // ── Step 4: Clear ──────────────────────────────────────────────────────────
   if (step === 4) {
     return (
       <SafeAreaView style={s.safe}>
@@ -224,19 +208,13 @@ export default function GameHardware() {
       </SafeAreaView>
     );
   }
-
-  // ── Steps 1-3: Circuit Workshop ────────────────────────────────────────────
   const frame = BATTLE_FRAMES[step - 1];
   const showOrc = step === 3;
 
   return (
     <SafeAreaView style={s.safe}>
       <View style={s.root}>
-
-        {/* ── WORKSHOP SCENE ─────────────────────────────────────────── */}
         <View style={s.scene}>
-
-          {/* Circuit board background grid */}
           <View style={s.sceneBg}>
             {[...Array(6)].map((_, i) => (
               <View key={`h${i}`} style={[s.gridLineH, { top: `${(i + 1) * 14}%` }]} />
@@ -245,8 +223,6 @@ export default function GameHardware() {
               <View key={`v${i}`} style={[s.gridLineV, { left: `${(i + 1) * 11}%` }]} />
             ))}
           </View>
-
-          {/* ── PCB Circuit Panel ──────────────────────────────────── */}
           <View style={s.pcbPanel}>
             <View style={[s.boltDot, { top: 5, left: 5 }]} />
             <View style={[s.boltDot, { top: 5, right: 5 }]} />
@@ -260,8 +236,6 @@ export default function GameHardware() {
                 <Text style={s.esp32Name}>ESP32</Text>
                 <Text style={s.esp32Sub}>CORE</Text>
               </View>
-
-              {/* Wire connections */}
               <View style={s.pcbWires}>
                 {[
                   { l: 'GPIO 2', r: 'SIG' },
@@ -277,8 +251,6 @@ export default function GameHardware() {
                   </View>
                 ))}
               </View>
-
-              {/* Sensor box */}
               <View style={[s.sensorBox, { borderColor: pluggedSensor ? SENSORS[pluggedSensor].color : '#444' }]}>
                 <Text style={s.pcbCompIcon}>
                   {pluggedSensor ? SENSORS[pluggedSensor].icon : '?'}
@@ -290,45 +262,35 @@ export default function GameHardware() {
               </View>
             </View>
           </View>
-
-          {/* Cat sprite */}
           <View style={s.playerPos}>
             <View style={s.catClip}>
               <Image
-                source={require('./assets/player_cat-sheet.png')}
+                source={require('../../assets/player_cat-sheet.png')}
                 style={[s.catSheet, { transform: [{ translateX: -catFrame * CAT_W }] }]}
                 resizeMode="stretch"
               />
             </View>
           </View>
-
-          {/* Orc (boss only) */}
           {showOrc && (
             <View style={s.bossPos}>
               <View style={s.orcClip}>
                 <Image
-                  source={require('./assets/npc_orc-sheet.png')}
+                  source={require('../../assets/npc_orc-sheet.png')}
                   style={[s.orcSheet, { transform: [{ translateX: -orcFrame * ORC_W }] }]}
                   resizeMode="stretch"
                 />
               </View>
             </View>
           )}
-
-          {/* Star badge */}
           <View style={s.starBadge}>
             <Text style={s.starTxt}>* {stars}</Text>
           </View>
         </View>
-
-        {/* ── STATS BAR ──────────────────────────────────────────────── */}
         <View style={s.statsBar}>
           <StatChip label="COMBO NOW"  value={String(combo)}      color="#E8A020" />
           <StatChip label="MULTIPLIER" value={`x${multiplier}`}  color="#3A8FE8" />
           <StatChip label="BEST COMBO" value={String(bestCombo)} color="#D94040" />
         </View>
-
-        {/* ── MISSION SCROLL ─────────────────────────────────────────── */}
         <View style={s.missionScroll}>
           <View style={s.npcAvatarCol}>
             <View style={s.avatarBox}>
@@ -340,8 +302,6 @@ export default function GameHardware() {
             <Text style={s.missionText}>{frame.text}</Text>
           </ScrollView>
         </View>
-
-        {/* ── SENSOR INVENTORY ───────────────────────────────────────── */}
         {!frame.isDialogue && (
           <View style={s.inventory}>
             <Text style={s.inventoryLabel}>[ ITEM INVENTORY ]</Text>
@@ -366,8 +326,6 @@ export default function GameHardware() {
             </View>
           </View>
         )}
-
-        {/* ── ACTION AREA ────────────────────────────────────────────── */}
         <View style={s.actionArea}>
           {frame.isDialogue ? (
             <TouchableOpacity style={s.orangeBtn} activeOpacity={0.8} onPress={handleNext}>
@@ -401,8 +359,6 @@ export default function GameHardware() {
             </View>
           )}
         </View>
-
-        {/* ── RESULT OVERLAY ─────────────────────────────────────────── */}
         {currentView !== 'idle' && (
           <View style={s.overlay}>
             <View style={[s.resultPanel, currentView === 'success' ? s.successPanel : s.errorPanel]}>
@@ -442,7 +398,6 @@ export default function GameHardware() {
   );
 }
 
-// ── Sub-component ───────────────────────────────────────────────────────────
 function StatChip({ label, value, color }) {
   return (
     <View style={[s.statCard, { borderColor: color }]}>
@@ -451,23 +406,11 @@ function StatChip({ label, value, color }) {
     </View>
   );
 }
-
-// ══════════════════════════════════════════════════════════════════════════════
-// STYLES — NO borderRadius (retro pixel-art spec)
-// Primary colors from spec:
-//   cream panel   #F5F2EB
-//   parchment     #F7E7C4
-//   circuit bg    #1E222A
-//   board green   #2E7D32
-//   border brown  #2C1B10
-// ══════════════════════════════════════════════════════════════════════════════
 const BORDER = { borderWidth: 3, borderColor: '#2C1B10' };
 const MONO   = { fontFamily: 'monospace' };
 
 const s = StyleSheet.create({
   safe: { flex: 1, backgroundColor: '#0e0e1a' },
-
-  // ── Intro / Clear shared ──────────────────────────────────────────────────
   introRoot: {
     flex: 1, alignItems: 'center', justifyContent: 'center',
     paddingHorizontal: 24, gap: 14,
@@ -493,7 +436,6 @@ const s = StyleSheet.create({
   introStarTxt: { ...MONO, color: '#E8A020', fontSize: 14, fontWeight: '700' },
   introRewardTxt: { ...MONO, color: '#aaa', fontSize: 12 },
   backLink: { ...MONO, color: '#888', fontSize: 13, marginTop: 4 },
-
   clearRoot: {
     alignItems: 'center', paddingHorizontal: 20, paddingTop: 32, paddingBottom: 40, gap: 12,
   },
@@ -516,18 +458,12 @@ const s = StyleSheet.create({
   },
   clearPanelHeader: { ...MONO, color: '#4CAF50', fontSize: 12, fontWeight: '700', marginBottom: 8 },
   clearPanelTxt: { ...MONO, color: '#a5d6a7', fontSize: 12, lineHeight: 20 },
-
-  // ── Shared button ─────────────────────────────────────────────────────────
   orangeBtn: {
     width: '100%', backgroundColor: '#C97D10',
     ...BORDER, paddingVertical: 14, alignItems: 'center',
   },
   orangeBtnTxt: { ...MONO, color: '#fff', fontSize: 15, fontWeight: 'bold' },
-
-  // ── Battle root ───────────────────────────────────────────────────────────
   root: { flex: 1 },
-
-  // ── Workshop scene ────────────────────────────────────────────────────────
   scene: { width: SW, height: SCENE_H, backgroundColor: '#1E222A', overflow: 'hidden' },
   sceneBg: { ...StyleSheet.absoluteFillObject },
   gridLineH: {
@@ -538,8 +474,6 @@ const s = StyleSheet.create({
     position: 'absolute', top: 0, bottom: 0, width: 1,
     backgroundColor: 'rgba(46,125,50,0.2)',
   },
-
-  // PCB circuit panel
   pcbPanel: {
     position: 'absolute',
     top: 8, left: 8, right: 8,
@@ -586,23 +520,18 @@ const s = StyleSheet.create({
   },
   sensorBoxName: { ...MONO, fontSize: 9, fontWeight: '700' },
   sensorBoxSub:  { ...MONO, color: '#888', fontSize: 8 },
-
-  // Characters
   playerPos: { position: 'absolute', left: SW * 0.05, bottom: GROUND_PX },
   catClip: { width: CAT_W, height: CAT_H, overflow: 'hidden' },
   catSheet: { width: CAT_W * CAT_FRAMES, height: CAT_H },
   bossPos: { position: 'absolute', right: SW * 0.44, bottom: GROUND_PX },
   orcClip: { width: ORC_W, height: ORC_H, overflow: 'hidden' },
   orcSheet: { width: ORC_W * ORC_FRAMES, height: ORC_H },
-
   starBadge: {
     position: 'absolute', top: 8, right: 10,
     backgroundColor: '#1a1a0a', ...BORDER, borderWidth: 2, borderColor: '#E8A020',
     paddingHorizontal: 8, paddingVertical: 3,
   },
   starTxt: { ...MONO, color: '#E8A020', fontWeight: 'bold', fontSize: 13 },
-
-  // Stats bar
   statsBar: {
     flexDirection: 'row', justifyContent: 'space-around', alignItems: 'center',
     backgroundColor: '#F5F2EB',
@@ -615,8 +544,6 @@ const s = StyleSheet.create({
   },
   statLabel: { ...MONO, fontSize: 8, fontWeight: '700', letterSpacing: 0.5 },
   statValue: { ...MONO, fontSize: 18, fontWeight: 'bold' },
-
-  // Mission scroll (parchment)
   missionScroll: {
     flex: 1, flexDirection: 'row', gap: 10,
     backgroundColor: '#F7E7C4',
@@ -632,8 +559,6 @@ const s = StyleSheet.create({
   npcName: { ...MONO, fontSize: 10, fontWeight: '700', color: '#2C1B10', textAlign: 'center' },
   missionTextScroll: { flex: 1 },
   missionText: { ...MONO, fontSize: 12, color: '#2C1B10', lineHeight: 19 },
-
-  // Sensor inventory
   inventory: {
     backgroundColor: '#F5F2EB',
     borderBottomWidth: 3, borderBottomColor: '#2C1B10',
@@ -650,8 +575,6 @@ const s = StyleSheet.create({
   sensorCardName: { ...MONO, fontSize: 10, fontWeight: '700' },
   sensorCardDesc: { ...MONO, fontSize: 8, color: '#555', textAlign: 'center' },
   pluggedMark: { ...MONO, fontSize: 8, color: '#27AE60', fontWeight: '700' },
-
-  // Action area
   actionArea: {
     backgroundColor: '#F5F2EB',
     borderTopWidth: 0,
@@ -669,8 +592,6 @@ const s = StyleSheet.create({
   },
   runBtnTxt: { ...MONO, color: '#fff', fontSize: 14, fontWeight: 'bold' },
   btnDisabled: { opacity: 0.4 },
-
-  // Result overlay
   overlay: {
     ...StyleSheet.absoluteFillObject,
     backgroundColor: 'rgba(0,0,0,0.75)',

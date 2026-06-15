@@ -1,24 +1,11 @@
-// HardwareArt.js
-// Realistic ESP32-WROOM-32 DevKit (PORTRAIT / vertical) + sensor modules.
-//   - Esp32Board:  vertical board, pin headers on LEFT & RIGHT edges
-//   - SensorModule: module with a 3-pin header on its LEFT edge
-// Pin coordinates are exported (local viewBox units) so Game.js can place
-// tappable hotspots that line up exactly with the drawn pads, at any size.
-//
-// Requires:  npx expo install react-native-svg
-
 import React from 'react';
 import Svg, {
   Rect, Circle, Line, Path, G, Ellipse,
   Defs, RadialGradient, LinearGradient, Stop, Text as SvgText,
 } from 'react-native-svg';
 
-// ─────────────────────────────────────────────────────────────────────────────
-// ESP32 geometry + pad map  (shared by art AND tappable overlay)
-// ─────────────────────────────────────────────────────────────────────────────
 export const ESP_VB = { w: 210, h: 360 };
 
-// LEFT column = one header row, RIGHT column = the row with 3V3/GND/D2
 const LEFT_LABELS  = ['VIN','GND','D13','D12','D14','D27','D26','D25','D33','D32','D35','D34','VN','VP','EN'];
 const RIGHT_LABELS = ['3V3','GND','D15','D2','D4','RX2','TX2','D5','D18','D19','D21','RX0','TX0','D22','D23'];
 
@@ -26,8 +13,6 @@ const PIN_N = 15;
 const PIN_Y0 = 66, PIN_Y1 = 300;
 const PIN_PITCH = (PIN_Y1 - PIN_Y0) / (PIN_N - 1);
 const LX = 18, RX = 192;
-
-// Usable pins for this mission (on the RIGHT edge, facing the sensor)
 const RIGHT_ACTIVE = {
   0: { id: 'esp_vcc', label: '3V3' },
   1: { id: 'esp_gnd', label: 'GND' },
@@ -75,11 +60,9 @@ export function Esp32Board({ w = 190 }) {
         </LinearGradient>
       </Defs>
 
-      {/* PCB */}
       <Rect x="8" y="6" width="194" height="348" rx="11" fill="#121216" stroke="#2c2c33" strokeWidth="1.5" />
       <Rect x="11" y="9" width="188" height="342" rx="9" fill="none" stroke="#1c1c22" strokeWidth="1" />
 
-      {/* mounting holes */}
       {[[24,22],[186,22],[24,338],[186,338]].map(([cx,cy],i) => (
         <G key={i}>
           <Circle cx={cx} cy={cy} r="8.5" fill="#26262c" stroke="#b6b6bd" strokeWidth="2" />
@@ -87,14 +70,11 @@ export function Esp32Board({ w = 190 }) {
         </G>
       ))}
 
-      {/* header strips (left & right) */}
       <Rect x="10" y={PIN_Y0 - 8} width="18" height={PIN_Y1 - PIN_Y0 + 16} rx="3" fill="#0a0a0d" />
       <Rect x="182" y={PIN_Y0 - 8} width="18" height={PIN_Y1 - PIN_Y0 + 16} rx="3" fill="#0a0a0d" />
 
-      {/* pads */}
       {ESP_PADS.map(p => <Pad key={p.key} x={p.x} y={p.y} active={p.active} />)}
 
-      {/* silkscreen labels */}
       {ESP_PADS.filter(p => p.side === 'L').map(p => (
         <SvgText key={'ll'+p.key} x="32" y={p.y + 2.4} fontSize="6.4" fill="#e8e8ea" textAnchor="start" fontFamily="monospace">{p.label}</SvgText>
       ))}
@@ -102,12 +82,10 @@ export function Esp32Board({ w = 190 }) {
         <SvgText key={'rl'+p.key} x="178" y={p.y + 2.4} fontSize={p.active ? '7.6' : '6.4'} fontWeight={p.active ? 'bold' : 'normal'} fill={p.active ? '#8FE6A8' : '#e8e8ea'} textAnchor="end" fontFamily="monospace">{p.label}</SvgText>
       ))}
 
-      {/* micro-USB (top) */}
       <Rect x="84" y="6" width="42" height="26" rx="3" fill="url(#esp_usb)" stroke="#7d8288" strokeWidth="1.4" />
       <Rect x="90" y="12" width="30" height="16" rx="2" fill="#5a5f64" />
       <Rect x="96" y="15" width="18" height="11" rx="1" fill="#3a3f44" />
 
-      {/* EN + BOOT buttons */}
       <Rect x="40" y="24" width="22" height="22" rx="4" fill="#202024" stroke="#3a3a40" strokeWidth="1" />
       <Rect x="45" y="29" width="12" height="12" rx="2" fill="#34343b" />
       <SvgText x="51" y="58" fontSize="6.5" fill="#cfcfcf" textAnchor="middle" fontFamily="monospace">EN</SvgText>
@@ -115,7 +93,6 @@ export function Esp32Board({ w = 190 }) {
       <Rect x="153" y="29" width="12" height="12" rx="2" fill="#34343b" />
       <SvgText x="159" y="58" fontSize="6.5" fill="#cfcfcf" textAnchor="middle" fontFamily="monospace">BOOT</SvgText>
 
-      {/* crystal + regulator + CP2102 + passives + LEDs (center) */}
       <Rect x="66" y="80" width="13" height="30" rx="6.5" fill="#cfd3d8" stroke="#9a9fa6" strokeWidth="1" />
       <Rect x="118" y="80" width="16" height="26" rx="2" fill="#18181c" />
       <Rect x="116" y="80" width="3" height="26" fill="#8a8f96" />
@@ -129,7 +106,6 @@ export function Esp32Board({ w = 190 }) {
       <Rect x="92" y="116" width="4" height="7" rx="1" fill="#E5484D" />
       <Rect x="100" y="116" width="4" height="7" rx="1" fill="#2f86e0" />
 
-      {/* RF shield (WROOM-32) at the bottom */}
       <Rect x="42" y="216" width="126" height="118" rx="4" fill="url(#esp_metal)" stroke="#82888f" strokeWidth="1.5" />
       <Rect x="46" y="220" width="118" height="110" rx="3" fill="none" stroke="#9aa0a7" strokeWidth="0.8" />
       <SvgText x="105" y="234" fontSize="7" fontWeight="bold" fill="#4a4f55" textAnchor="middle" fontFamily="monospace">ESP32-WROOM-32</SvgText>
@@ -139,16 +115,11 @@ export function Esp32Board({ w = 190 }) {
       ))}
       <Circle cx="132" cy="300" r="9" fill="none" stroke="#7d8288" strokeWidth="1" />
 
-      {/* PCB antenna meander (bottom edge) */}
       <Path d="M62 346 V338 H74 V346 H86 V338 H98 V346 H110 V338 H122 V346 H134 V338 H146 V346"
         stroke="#e8e2cf" strokeWidth="2.2" fill="none" strokeLinejoin="round" />
     </Svg>
   );
 }
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Sensor geometry + pad map  (3-pin header on the LEFT edge, facing the ESP32)
-// ─────────────────────────────────────────────────────────────────────────────
 export const SENSOR_VB = { w: 108, h: 100 };
 export const SENSOR_PADS = [
   { id: 'sen_sig', x: 8, y: 32 },
