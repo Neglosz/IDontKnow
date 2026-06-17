@@ -13,10 +13,19 @@ import CreateCharacterScreen from './src/screen/CreateCharacterScreen';
 import ScanScreen from './src/screen/ScanScreen';
 import ScanLoading from './src/screen/ScanLoading';
 import SelectLens from './src/screen/SelectLens';
+import KnowledgeScreen from './src/screen/KnowledgeScreen';
+import CalibrateScreen from './src/screen/CalibrateScreen';
+import SkillTreeScreen from './src/screen/SkillTreeScreen';
 
 function AppScreens() {
   const { user, isNewUser, clearNewUser } = useAuth();
   const [screen, setScreen] = useState('scan');
+  const [navParams, setNavParams] = useState(null);
+
+  const navigate = (next, params) => {
+    setNavParams(params ?? null);
+    setScreen(next);
+  };
 
   if (!user) {
     if (screen === 'signup')          return <SignUpScreen onNavigate={setScreen} />;
@@ -59,9 +68,32 @@ export default function App() {
 
   return (
     <SafeAreaProvider>
+<<<<<<< HEAD
       <AuthProvider>
         <AppScreens />
       </AuthProvider>
+=======
+    <View style={{ flex: 1, backgroundColor: '#120E08' }}>
+      {/* <StatusBar style="light" />
+
+      {screen === 'menu' && <MenuScreen onSelect={setScreen} />}
+      {screen === 'hardware' && <HardwareGame />}
+      {screen === 'software' && <SoftwareGame />} */}
+
+      {/* floating back button — only shown inside a game */}
+      {/* {screen !== 'menu' && (
+        <TouchableOpacity style={s.backBtn} onPress={() => setScreen('menu')}>
+          <Text style={s.backText}>← MENU</Text>
+        </TouchableOpacity>
+      )} */}
+      {screen === 'scan' && <ScanScreen onNavigate={navigate} />}
+      {screen === 'scan-loading' && <ScanLoading onNavigate={navigate} />}
+      {screen === 'select-lens' && <SelectLens onNavigate={navigate} />}
+      {screen === 'learn' && <KnowledgeScreen onNavigate={navigate} {...navParams} />}
+      {screen === 'calibrate' && <CalibrateScreen onNavigate={navigate} {...navParams} />}
+      {screen === 'skill-tree' && <SkillTreeScreen onNavigate={navigate} {...navParams} />}
+    </View>
+>>>>>>> main
     </SafeAreaProvider>
   );
 }
