@@ -8,9 +8,11 @@ import MenuScreen from './src/screen/MenuScreen';
 import HardwareGame from './src/screen/Game';
 import SoftwareGame from './src/screen/SoftwareGame';
 import ScanScreen from './src/screen/ScanScreen';
+import ScanLoading from './src/screen/ScanLoading';
+import SelectLens from './src/screen/SelectLens';
 
 export default function App() {
-  const [screen, setScreen] = useState('menu'); // 'menu' | 'hardware' | 'software'
+  const [screen, setScreen] = useState('scan');
 
   const [fontsLoaded] = useFonts({
     'PKNonthaburi': require('./assets/PK Nonthaburi Demo.ttf'),
@@ -34,7 +36,9 @@ export default function App() {
           <Text style={s.backText}>← MENU</Text>
         </TouchableOpacity>
       )} */}
-      <ScanScreen/>
+      {screen === 'scan' && <ScanScreen onNavigate={setScreen} />}
+      {screen === 'scan-loading' && <ScanLoading onNavigate={setScreen} />}
+      {screen === 'select-lens' && <SelectLens onNavigate={setScreen} />}
     </View>
     </SafeAreaProvider>
   );

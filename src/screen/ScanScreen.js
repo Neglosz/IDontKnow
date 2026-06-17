@@ -5,7 +5,6 @@ import {
     TouchableOpacity,
     Image,
     StyleSheet,
-    ScrollView,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Svg, { Rect, Circle } from 'react-native-svg';
@@ -103,7 +102,7 @@ function ChatMessage({ side, name, avatar, children }) {
     );
 }
 
-export default function ScanScreen() {
+export default function ScanScreen({ onNavigate }) {
     return (
         <SafeAreaView style={styles.safe} edges={['top']}>
             <View style={styles.body}>
@@ -120,12 +119,8 @@ export default function ScanScreen() {
                     </View>
                 </View>
 
-                {/* ส่วนกลางเลื่อนได้ ถ้าจอเล็กจะ scroll แทนการล้น */}
-                <ScrollView
-                    style={styles.scroll}
-                    contentContainerStyle={styles.scrollContent}
-                    showsVerticalScrollIndicator={false}
-                >
+                {/* ส่วนกลาง — flex ยืด/หดตามจอ (ไม่มี scroll) */}
+                <View style={styles.content}>
                     <View style={styles.viewfinder}>
                         <ViewfinderBrackets />
 
@@ -173,10 +168,10 @@ export default function ScanScreen() {
                             อื้อ! อุปกรณ์ชิ้นนี้ทำงานยังไงนะ? มาลองสแกนดูให้รู้กันไปเลย!
                         </ChatMessage>
                     </View>
-                </ScrollView>
+                </View>
 
                 {/* CTA — ปักไว้เหนือ NavBar เสมอ ไม่จม */}
-                <TouchableOpacity style={styles.ctaBtn} activeOpacity={0.85}>
+                <TouchableOpacity style={styles.ctaBtn} activeOpacity={0.85} onPress={() => onNavigate?.('scan-loading')}>
                     <LinearGradient
                         colors={['#DEA569', '#C47A2D', '#C47A2D', '#854F18']}
                         locations={[0, 0.15, 0.85, 1]}
@@ -243,11 +238,8 @@ const styles = StyleSheet.create({
         color: '#3A1A00',
     },
 
-    scroll: {
+    content: {
         flex: 1,
-    },
-    scrollContent: {
-        paddingBottom: 8,
     },
 
     viewfinder: {
@@ -255,7 +247,8 @@ const styles = StyleSheet.create({
         borderColor: '#452817',
         borderRadius: 10,
         padding: 20,
-        height: 282,
+        flex: 1,
+        minHeight: 200,
         justifyContent: 'space-between',
         position: 'relative',
         marginBottom: 20,
