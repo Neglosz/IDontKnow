@@ -343,9 +343,8 @@ const styles = StyleSheet.create({
     },
     ctaText: {
         fontFamily: 'PKNonthaburi',
-        fontSize: 28,
+        fontSize: 24,
         fontWeight: '900',
         color: '#FFFFFF',
-        marginBottom: 6,
     },
 });

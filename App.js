@@ -10,9 +10,18 @@ import SoftwareGame from './src/screen/SoftwareGame';
 import ScanScreen from './src/screen/ScanScreen';
 import ScanLoading from './src/screen/ScanLoading';
 import SelectLens from './src/screen/SelectLens';
+import KnowledgeScreen from './src/screen/KnowledgeScreen';
+import CalibrateScreen from './src/screen/CalibrateScreen';
+import SkillTreeScreen from './src/screen/SkillTreeScreen';
 
 export default function App() {
   const [screen, setScreen] = useState('scan');
+  const [navParams, setNavParams] = useState(null);
+
+  const navigate = (next, params) => {
+    setNavParams(params ?? null);
+    setScreen(next);
+  };
 
   const [fontsLoaded] = useFonts({
     'PKNonthaburi': require('./assets/PK Nonthaburi Demo.ttf'),
@@ -36,9 +45,12 @@ export default function App() {
           <Text style={s.backText}>← MENU</Text>
         </TouchableOpacity>
       )} */}
-      {screen === 'scan' && <ScanScreen onNavigate={setScreen} />}
-      {screen === 'scan-loading' && <ScanLoading onNavigate={setScreen} />}
-      {screen === 'select-lens' && <SelectLens onNavigate={setScreen} />}
+      {screen === 'scan' && <ScanScreen onNavigate={navigate} />}
+      {screen === 'scan-loading' && <ScanLoading onNavigate={navigate} />}
+      {screen === 'select-lens' && <SelectLens onNavigate={navigate} />}
+      {screen === 'learn' && <KnowledgeScreen onNavigate={navigate} {...navParams} />}
+      {screen === 'calibrate' && <CalibrateScreen onNavigate={navigate} {...navParams} />}
+      {screen === 'skill-tree' && <SkillTreeScreen onNavigate={navigate} {...navParams} />}
     </View>
     </SafeAreaProvider>
   );
