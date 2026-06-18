@@ -4,7 +4,6 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
-import NavBar from '../components/NavBar';
 
 // sprite sheet ของ MASTER — ปรับ path / frame ให้ตรงกับไฟล์จริง
 const masterSrc = require('../../assets/boss_talkt_128.png');
@@ -220,8 +219,6 @@ export default function CalibrateScreen({
                 )}
 
             </View>
-
-            <NavBar active="scan" onPress={onNavigate} />
         </SafeAreaView>
     );
 }

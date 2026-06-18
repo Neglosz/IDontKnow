@@ -5,44 +5,13 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { LinearGradient } from 'expo-linear-gradient';
-import NavBar from '../components/NavBar';
+import { TOPICS, defaultNodeId } from '../data/lessons';
 
 const hippoSrc = require('../../assets/hippo.png');
 
 const NODE = 84;
 const T3_GAP = 56;
 const BRANCH_W = NODE + T3_GAP;
-
-const TABS = ['การต่อวงจร', 'ออกแบบบอร์ด', 'เขียนโค้ดคุม', 'เชื่อมต่อระบบ'];
-
-const NODES = {
-    t0: {
-        tier: 'T0', en: 'Basic Design', th: 'พื้นฐานการออกแบบ', status: 'done',
-        fullTh: 'พื้นฐานการออกแบบ', desc: 'ทำความเข้าใจหลักการออกแบบวงจรเบื้องต้น'
-    },
-    t1: {
-        tier: 'T1', en: 'Circuit Reading', th: 'อ่านวงจรไฟฟ้า', status: 'done',
-        fullTh: 'อ่านวงจรไฟฟ้า', desc: 'อ่านและตีความสัญลักษณ์ในแผนผังวงจร'
-    },
-    t2: {
-        tier: 'T2', en: 'PCB Layout', th: 'ออกแบบ PCB', status: 'available',
-        fullTh: 'ออกแบบแผ่นวงจร PCB', desc: 'การแปลงพิมพ์เขียวให้กลายเป็นลายวงจรพิมพ์'
-    },
-    t3a: {
-        tier: 'T3', en: 'Power Management', th: 'ระบบจ่ายไฟ', status: 'locked',
-        fullTh: 'ระบบจ่ายไฟ', requiredId: 't2'
-    },
-    t3b: {
-        tier: 'T3', en: 'Signal Integrity', th: 'การวัดกระแส', status: 'locked',
-        fullTh: 'การวัดกระแส', requiredId: 't2'
-    },
-    t4: {
-        tier: 'T4', en: 'Advanced Design', th: 'ออกแบบขั้นสูง', status: 'locked',
-        fullTh: 'ออกแบบขั้นสูง', requiredId: 't2'
-    },
-};
-
-const DEFAULT_SELECTED = 't2';
 
 function SpriteFrame({ source, frameWidth, frameHeight, totalFrames, fps = 8 }) {
     const [frame, setFrame] = useState(0);
@@ -60,8 +29,8 @@ function SpriteFrame({ source, frameWidth, frameHeight, totalFrames, fps = 8 }) 
         </View>
     );
 }
-function SkillNode({ id, selected, onPress }) {
-    const n = NODES[id];
+function SkillNode({ id, node, selected, onPress }) {
+    const n = node;
     const map = {
         done: { col: '#7E9B57', icon: 'checkmark-circle-outline', txt: '#4A2800' },
         available: { col: '#C8972F', icon: 'star-outline', txt: '#4A2800' },
@@ -103,8 +72,21 @@ function TierRow({ label, children }) {
 }
 
 export default function SkillTreeScreen({ onNavigate }) {
-    const [activeTab, setActiveTab] = useState('ออกแบบบอร์ด');
+    const TABS = TOPICS.map(t => t.th);
+    const [activeTab, setActiveTab] = useState(TABS[0]);
+
+    const topic = TOPICS.find(t => t.th === activeTab) ?? TOPICS[0];
+    const NODES = topic.nodes;
+    const DEFAULT_SELECTED = defaultNodeId(topic);
+
     const [selectedId, setSelectedId] = useState(DEFAULT_SELECTED);
+
+    // เปลี่ยนแท็บ → เด้งไปเลือก node เริ่มต้นของหัวข้อนั้น
+    const switchTab = (tab) => {
+        const t = TOPICS.find(x => x.th === tab) ?? TOPICS[0];
+        setActiveTab(tab);
+        setSelectedId(defaultNodeId(t));
+    };
 
     const selected = NODES[selectedId];
     const isLocked = selected.status === 'locked';
@@ -117,6 +99,10 @@ export default function SkillTreeScreen({ onNavigate }) {
 
     const closePopup = () => setSelectedId(DEFAULT_SELECTED);
     const goRequired = () => setSelectedId(selected.requiredId ?? DEFAULT_SELECTED);
+
+    const startLesson = () => {
+        if (selected.steps?.length) onNavigate?.('game-hardware', { lesson: selected });
+    };
 
     return (
         <SafeAreaView style={styles.safe} edges={['top']}>
@@ -136,7 +122,7 @@ export default function SkillTreeScreen({ onNavigate }) {
                                 <TouchableOpacity
                                     key={tab}
                                     activeOpacity={0.85}
-                                    onPress={() => setActiveTab(tab)}
+                                    onPress={() => switchTab(tab)}
                                     style={[styles.chip, on && styles.chipOn]}
                                 >
                                     <Text style={[styles.chipText, on && styles.chipTextOn]}>{tab}</Text>
@@ -147,7 +133,7 @@ export default function SkillTreeScreen({ onNavigate }) {
 
                     <Text style={styles.quest}>
                         <Text style={styles.questLabel}>Quest : </Text>
-                        เรียนรู้ขั้นตอนการออกแบบบอร์ด
+                        {topic.quest}
                     </Text>
 
                     <View style={styles.progressRow}>
@@ -169,17 +155,17 @@ export default function SkillTreeScreen({ onNavigate }) {
                     showsVerticalScrollIndicator={false}
                 >
                     <TierRow label="T0">
-                        <SkillNode id="t0" selected={selectedId === 't0'} onPress={setSelectedId} />
+                        <SkillNode id="t0" node={NODES.t0} selected={selectedId === 't0'} onPress={setSelectedId} />
                     </TierRow>
                     <VLine color={'#7E9B57'} height={26} />
 
                     <TierRow label="T1">
-                        <SkillNode id="t1" selected={selectedId === 't1'} onPress={setSelectedId} />
+                        <SkillNode id="t1" node={NODES.t1} selected={selectedId === 't1'} onPress={setSelectedId} />
                     </TierRow>
                     <VLine color={'#C8972F'} height={26} />
 
                     <TierRow label="T2">
-                        <SkillNode id="t2" selected={selectedId === 't2'} onPress={setSelectedId} />
+                        <SkillNode id="t2" node={NODES.t2} selected={selectedId === 't2'} onPress={setSelectedId} />
                     </TierRow>
 
                     <View style={styles.branchWrap}>
@@ -189,8 +175,8 @@ export default function SkillTreeScreen({ onNavigate }) {
 
                     <TierRow label="T3">
                         <View style={styles.t3row}>
-                            <SkillNode id="t3a" selected={selectedId === 't3a'} onPress={setSelectedId} />
-                            <SkillNode id="t3b" selected={selectedId === 't3b'} onPress={setSelectedId} />
+                            <SkillNode id="t3a" node={NODES.t3a} selected={selectedId === 't3a'} onPress={setSelectedId} />
+                            <SkillNode id="t3b" node={NODES.t3b} selected={selectedId === 't3b'} onPress={setSelectedId} />
                         </View>
                     </TierRow>
 
@@ -200,7 +186,7 @@ export default function SkillTreeScreen({ onNavigate }) {
                     </View>
 
                     <TierRow label="T4">
-                        <SkillNode id="t4" selected={selectedId === 't4'} onPress={setSelectedId} />
+                        <SkillNode id="t4" node={NODES.t4} selected={selectedId === 't4'} onPress={setSelectedId} />
                     </TierRow>
                 </ScrollView>
 
@@ -255,26 +241,31 @@ export default function SkillTreeScreen({ onNavigate }) {
                             </View>
 
                             <TouchableOpacity
-                                style={styles.cta}
+                                style={[styles.cta, !selected.steps?.length && styles.ctaDone]}
                                 activeOpacity={0.85}
-                                onPress={() => onNavigate?.('game-hardware')}
+                                onPress={startLesson}
+                                disabled={!selected.steps?.length}
                             >
-                                <LinearGradient
-                                    colors={['#DEA569', '#C47A2D', '#C47A2D', '#854F18']}
-                                    locations={[0, 0.15, 0.85, 1]}
-                                    start={{ x: 0, y: 0 }}
-                                    end={{ x: 0, y: 1 }}
-                                    style={StyleSheet.absoluteFill}
-                                />
-                                <Text style={styles.ctaText}>เริ่มเรียนรู้ ➤</Text>
+                                {!!selected.steps?.length && (
+                                    <LinearGradient
+                                        colors={['#DEA569', '#C47A2D', '#C47A2D', '#854F18']}
+                                        locations={[0, 0.15, 0.85, 1]}
+                                        start={{ x: 0, y: 0 }}
+                                        end={{ x: 0, y: 1 }}
+                                        style={StyleSheet.absoluteFill}
+                                    />
+                                )}
+                                <Text style={[styles.ctaText, !selected.steps?.length && styles.ctaTextDone]}>
+                                    {selected.steps?.length
+                                        ? 'เริ่มเรียนรู้ ➤'
+                                        : selected.status === 'done' ? 'ผ่านแล้ว ✓' : 'เร็ว ๆ นี้'}
+                                </Text>
                             </TouchableOpacity>
                         </>
                     )}
                 </Animated.View>
 
             </View>
-
-            <NavBar active="quest" onPress={onNavigate} />
         </SafeAreaView>
     );
 }
@@ -385,6 +376,8 @@ const styles = StyleSheet.create({
         borderWidth: 2, borderColor: '#2C1810',
     },
     ctaText: { fontFamily: 'PKNonthaburi', fontSize: 24, fontWeight: '900', color: '#FFFFFF' },
+    ctaDone: { backgroundColor: '#D8CBB5', borderColor: '#C2B6A4' },
+    ctaTextDone: { color: '#6E441B' },
 
     pipoRow: { flexDirection: 'row', alignItems: 'flex-end', gap: 6 },
     pipoBubbleWrap: { flex: 1, position: 'relative' },

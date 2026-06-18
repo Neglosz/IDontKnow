@@ -6,7 +6,6 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { LinearGradient } from 'expo-linear-gradient';
-import NavBar from '../components/NavBar';
 
 const shopSrc = require('../../assets/shop.png');
 
@@ -245,8 +244,6 @@ export default function SelectLens({ onNavigate }) {
                 </TouchableOpacity>
 
             </View>
-
-            <NavBar active="scan" />
 
             {modalNode && (
                 <TopicModal

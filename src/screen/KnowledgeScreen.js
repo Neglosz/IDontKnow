@@ -5,7 +5,6 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { LinearGradient } from 'expo-linear-gradient';
-import NavBar from '../components/NavBar';
 
 const shopSrc = require('../../assets/shop.png');
 // ใช้ sprite sheet ตัวเดียวกับ ScanScreen เพื่อให้ฮิปโปขยับได้
@@ -141,8 +140,6 @@ export default function KnowledgeScreen({ onNavigate, item, path, topic }) {
                 </TouchableOpacity>
 
             </View>
-
-            <NavBar active="shop" onPress={onNavigate} />
         </SafeAreaView>
     );
 }
