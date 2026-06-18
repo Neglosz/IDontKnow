@@ -257,7 +257,7 @@ export default function SkillTreeScreen({ onNavigate }) {
                             <TouchableOpacity
                                 style={styles.cta}
                                 activeOpacity={0.85}
-                                onPress={() => onNavigate?.('calibrate')}
+                                onPress={() => onNavigate?.('game-hardware')}
                             >
                                 <LinearGradient
                                     colors={['#DEA569', '#C47A2D', '#C47A2D', '#854F18']}
@@ -340,8 +340,8 @@ const styles = StyleSheet.create({
     },
     nodeSelected: {
         borderWidth: 3.5,
-        shadowColor: '#000', shadowOpacity: 0.25, shadowRadius: 6,
-        shadowOffset: { width: 0, height: 3 }, elevation: 6,
+        shadowColor: '#000', shadowOpacity: 0.25, shadowRadius: 2,
+        shadowOffset: { width: 0, height: 3 }, elevation: 4,
     },
     nodeEn: { fontFamily: 'Jersey', fontSize: 18, fontWeight: '700' },
     nodeTh: { fontFamily: 'PKNonthaburi', fontSize: 16 },

@@ -10,10 +10,16 @@ import {
   Dimensions,
   Animated,
   PanResponder,
+  KeyboardAvoidingView,
+  Platform,
+  TouchableWithoutFeedback,
+  Keyboard,
 } from 'react-native';
 import { Esp32Board, SensorModule, ESP_VB, ESP_PADS, SENSOR_VB, SENSOR_PADS } from './HardwareArt';
 import Svg, { Path } from 'react-native-svg';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import TraceWidthSim from './TraceWidthSim';
+import { SequenceSim, SelectSim, DiagnoseSim } from './simEngine';
 
 const { width: SW } = Dimensions.get('window');
 
@@ -33,41 +39,33 @@ const BG_H = 576;
 const SCENE_H = SW * (BG_H / BG_W);
 const GROUND_PX = SCENE_H * ((BG_H - 530) / BG_H);
 
-// Steps: 0=Intro  1=Battle(Professor)  2=Battle(Skeleton)  3=Battle(Orc)  4=Clear
-const BATTLE_FRAMES = [
-  {
-    mode: 'dialogue',
-    npc: 'Professor',
-    emoji: '🧑‍🏫',
+// ── ด่านย่อยทั้งหมด ────────────────────────────────────────────────────────
+// step 0 = Intro, step 1..6 = ด่านตาม ENCOUNTERS, step 7 = Clear
+//   kind:'dialogue' = ผู้เชี่ยวชาญสอน (กดรับทราบ)
+//   kind:'sim'      = simulation (Tune / Sequence / Select / Diagnose)
+//   kind:'boss'     = Connect = CircuitPuzzle (ต่อวงจร)
+const ENCOUNTERS = [
+  { kind: 'dialogue', npc: 'Professor', emoji: '🧑‍🏫',
     text:
       'การคำนวณขนาดเส้นทองแดง (Trace Width)\n\n' +
       'จำไว้นะ ยิ่งกระแสไฟฟ้า (Current) ไหลผ่านบอร์ดมาก เส้นทองแดงก็ต้องยิ่งกว้างขึ้น\n\n' +
-      'โดยสูตรพื้นฐานที่ต้องรู้:\n' +
-      'ความกว้างเส้นทองแดง (mil) = กระแสไฟ (A) × 50\n\n' +
-      'ถ้าเส้นทองแดงเล็กเกินไป บอร์ดจะมอร์ดรองขาดได้!',
-  },
-  {
-    mode: 'input',
-    npc: 'Skeleton',
-    emoji: '💀',
-    text:
-      'แฮ่ อยากไปไม่ดอรหรอ? ถ้ากระแสซอมบี้มีน้อย\n' +
-      'ปัญหาหนู ๆ แผงวงจรควบคุมบุกตนอันนี้มีกระแสไฟผ่าน 1 แอมแปร์ (1A) ' +
-      'และต้องตั้งค่าความกว้างเส้นทองแดง (Trace Width) mil ' +
-      'ลายวงจรจะดีจะไม่จาง? พิมพ์คำตอบมาซิ!',
-    answer: '50',
-  },
-  {
-    mode: 'input',
-    npc: 'Orc แห่งความสับสน',
-    emoji: '👹',
-    text:
-      'กี่ ผ่านเจ้ากระบวนท่าได้ไงล่ะ! ' +
-      'บอร์ดตลาดกระแสจ่ายไฟฟ้าสูงถึง 3 แอมแปร์ (3A) ' +
-      'และต้องการขยายขนาดเส้นทองแดงกี่ mil ' +
-      'จะทำแนวทางกำลังส่งออกจ่ายให้ไหว? พิมพ์คำตอบเลย!',
-    answer: '150',
-  },
+      'สูตรพื้นฐาน:\nความกว้างเส้นทองแดง (mil) = กระแสไฟ (A) × 50\n\n' +
+      'ถ้าเส้นทองแดงเล็กเกินไป จะร้อนจนขาดได้!' },
+
+  { kind: 'sim', sim: 'tune', current: 1, questId: 'trace_1A', npc: 'Skeleton', emoji: '💀',
+    text: 'แฮ่ บอร์ดนี้มีกระแสผ่าน 1 แอมแปร์ (1A) — ลากปรับความกว้างเส้นทองแดงให้พอดี!' },
+
+  { kind: 'sim', sim: 'sequence', npc: 'Slime', emoji: '🟢',
+    text: 'จะทำบอร์ดต้องทำตามลำดับ! เรียงขั้นตอนการผลิต PCB ให้ถูกต้อง' },
+
+  { kind: 'sim', sim: 'select', npc: 'Bat', emoji: '🦇',
+    text: 'เลือกตัวแปลงไฟที่เหมาะกับโจทย์ที่สุด — ผิดแล้วบอร์ดร้อนนะ!' },
+
+  { kind: 'sim', sim: 'diagnose', npc: 'Ghost', emoji: '👻',
+    text: 'เซนเซอร์ไม่ทำงาน! วัดแต่ละขาแล้วหาให้เจอว่าพังตรงไหน' },
+
+  { kind: 'boss', npc: 'Orc แห่งความสับสน', emoji: '👹',
+    text: 'กี่! ต่อวงจรเซนเซอร์ให้ถูกต้องสิ ไม่งั้นประตูไม่เปิดหรอก!' },
 ];
 
 function useSpriteAnim(frameCount, fps = 8) {
@@ -79,26 +77,23 @@ function useSpriteAnim(frameCount, fps = 8) {
   return frame;
 }
 
-export default function Game() {
+export default function Game({ onNavigate }) {
   const [step, setStep] = useState(0);
   const [answer, setAnswer] = useState('');
   const [combo, setCombo] = useState(1);
   const [bestCombo] = useState(6);
   const [stars, setStars] = useState(1);
   const [circuitOpen, setCircuitOpen] = useState(false);
+  const [activeSim, setActiveSim] = useState(null);
 
   const catFrame = useSpriteAnim(CAT_FRAMES, CAT_FPS);
   const orcFrame = useSpriteAnim(ORC_FRAMES, ORC_FPS);
 
+  // ไปด่านถัดไป (ใช้ร่วมทุก encounter)
   const goNext = () => {
-    if (step >= 1 && step <= 3) {
-      const frame = BATTLE_FRAMES[step - 1];
-      if (frame.mode === 'input') {
-        setCombo(c => c + 1);
-        setAnswer('');
-      }
-      if (step === 1) setStars(2);
-    }
+    setCombo(c => c + 1);
+    setStars(s => Math.min(s + 1, ENCOUNTERS.length));
+    setAnswer('');
     setStep(s => s + 1);
   };
 
@@ -113,13 +108,13 @@ export default function Game() {
 
           <View style={styles.introBox}>
             <Text style={styles.introDesc}>
-              Hippo จะได้พบผู้เชี่ยวชาญ 3 คนเพื่อเรียนรู้{'\n'}
-              ก่อนเผชิญหน้ากับ Boss Monster.....
+              Hippo จะได้พบผู้เชี่ยวชาญและเหล่ามอนสเตอร์{'\n'}
+              เพื่อเรียนรู้ก่อนเผชิญหน้ากับ Boss Monster.....
             </Text>
             <View style={styles.npcLineup}>
-              {['PRO', 'PRO', 'PRO', 'BOSS'].map((label, i) => (
+              {['PRO', 'SIM', 'SIM', 'SIM', 'BOSS'].map((label, i) => (
                 <View key={i} style={[styles.npcChip, label === 'BOSS' && styles.npcChipBoss]}>
-                  <Text style={styles.npcChipIcon}>{label === 'BOSS' ? '👹' : '🧑‍🏫'}</Text>
+                  <Text style={styles.npcChipIcon}>{label === 'BOSS' ? '👹' : label === 'PRO' ? '🧑‍🏫' : '⚔️'}</Text>
                   <Text style={[styles.npcChipTxt, label === 'BOSS' && styles.npcChipBossTxt]}>
                     {label}
                   </Text>
@@ -136,7 +131,7 @@ export default function Game() {
           <TouchableOpacity style={styles.orangeBtn} activeOpacity={0.8} onPress={goNext}>
             <Text style={styles.orangeBtnTxt}>เริ่มเลย !!!</Text>
           </TouchableOpacity>
-          <TouchableOpacity activeOpacity={0.6}>
+          <TouchableOpacity activeOpacity={0.6} onPress={() => onNavigate?.('skill-tree')}>
             <Text style={styles.backLink}>◄  BACK</Text>
           </TouchableOpacity>
         </View>
@@ -144,8 +139,8 @@ export default function Game() {
     );
   }
 
-  // ── Step 4: Clear ────────────────────────────────────────────────────────
-  if (step === 4) {
+  // ── Clear (หลังผ่านด่านสุดท้าย) ────────────────────────────────────────────
+  if (step > ENCOUNTERS.length) {
     return (
       <SafeAreaView style={styles.safe}>
         <ScrollView contentContainerStyle={styles.clearRoot} showsVerticalScrollIndicator={false}>
@@ -165,8 +160,8 @@ export default function Game() {
 
           <View style={styles.scoreRow}>
             <View style={styles.scoreBox}>
-              <Text style={styles.scoreLabel}>แถวเปล่า</Text>
-              <Text style={[styles.scoreValue, { color: '#D94040' }]}>-15</Text>
+              <Text style={styles.scoreLabel}>ด่านที่ผ่าน</Text>
+              <Text style={[styles.scoreValue, { color: '#4CAF50' }]}>{ENCOUNTERS.length}</Text>
             </View>
             <View style={styles.scoreBox}>
               <Text style={styles.scoreLabel}>Boss Bonus</Text>
@@ -176,15 +171,8 @@ export default function Game() {
 
           <View style={styles.clearPanel}>
             <Text style={styles.clearPanelTxt}>
-              ถ้าต้องการวางเส้นทองแดงจ่ายไฟขนาดไม่สายให้รองรับกระแส 3 แอมแปร์ (3A){' '}
-              จะต้องตั้งค่าความกว้างเส้นทองแดง mil?
-            </Text>
-            <Text style={styles.clearAnswer}>คำตอบของคุณ: 200 mil</Text>
-            <Text style={styles.clearCorrect}>คำตอบที่ถูก: 150 mil</Text>
-            <Text style={styles.clearExplain}>
-              {'\n'}อธิบาย:{'\n'}
-              ความกว้างเส้นทองแดง (mil){'\n'}
-              = กระแสไฟ (A) × 50 = 3 × 50 = 150 mil
+              ผ่านครบทั้ง 5 รูปแบบ: ปรับค่า · เรียงลำดับ · เลือกอุปกรณ์ · หาจุดเสีย · ต่อวงจร{'\n'}
+              ระบบได้บันทึกพฤติกรรมการเล่นไว้ประเมินความเข้าใจแล้ว
             </Text>
           </View>
 
@@ -194,7 +182,7 @@ export default function Game() {
             <Text style={styles.clearHintLink}>       🔴 สร้าง Node การเรียนรู้</Text>
           </View>
 
-          <TouchableOpacity style={[styles.orangeBtn, { marginTop: 16 }]} activeOpacity={0.8} onPress={() => setStep(0)}>
+          <TouchableOpacity style={[styles.orangeBtn, { marginTop: 16 }]} activeOpacity={0.8} onPress={() => { setStep(0); onNavigate?.('skill-tree'); }}>
             <Text style={styles.orangeBtnTxt}>กลับ SKILL TREE  ▶</Text>
           </TouchableOpacity>
         </ScrollView>
@@ -202,7 +190,22 @@ export default function Game() {
     );
   }
 
-  // ── Circuit puzzle — full screen mini-game ──────────────────────────────
+  // ── เปิด simulation (Tune / Sequence / Select / Diagnose) ──────────────────
+  if (activeSim) {
+    const enc = ENCOUNTERS[step - 1];
+    const close = () => setActiveSim(null);
+    const win   = () => { setActiveSim(null); goNext(); };
+    let sim = null;
+    if (activeSim === 'tune')
+      sim = <TraceWidthSim current={enc.current} questId={enc.questId}
+              npcName={enc.npc} npcEmoji={enc.emoji} onSuccess={win} onClose={close} />;
+    else if (activeSim === 'sequence') sim = <SequenceSim onSuccess={win} onClose={close} />;
+    else if (activeSim === 'select')   sim = <SelectSim   onSuccess={win} onClose={close} />;
+    else if (activeSim === 'diagnose') sim = <DiagnoseSim onSuccess={win} onClose={close} />;
+    return <SafeAreaView style={styles.safe}>{sim}</SafeAreaView>;
+  }
+
+  // ── Boss: Circuit puzzle (Connect) — full screen ───────────────────────────
   if (circuitOpen) {
     return (
       <SafeAreaView style={styles.safe}>
@@ -214,13 +217,18 @@ export default function Game() {
     );
   }
 
-  // ── Steps 1–3: Battle ────────────────────────────────────────────────────
-  const frame = BATTLE_FRAMES[step - 1];
+  // ── ด่านปัจจุบัน: หน้าจอ Battle / Dialogue ─────────────────────────────────
+  const enc = ENCOUNTERS[step - 1];
   const multiplier = (1 + (combo - 1) * 0.2).toFixed(1);
 
   return (
     <SafeAreaView style={styles.safe}>
-      <View style={styles.root}>
+      <KeyboardAvoidingView
+        style={styles.root}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      >
+      <TouchableWithoutFeedback onPress={Keyboard.dismiss} accessible={false}>
+      <View style={{ flex: 1 }}>
 
         {/* Battle scene */}
         <View style={styles.scene}>
@@ -265,48 +273,36 @@ export default function Game() {
           <View style={styles.npcRow}>
             <View style={styles.avatarWrap}>
               <View style={styles.avatarBox}>
-                <Text style={styles.avatarEmoji}>{frame.emoji}</Text>
+                <Text style={styles.avatarEmoji}>{enc.emoji}</Text>
               </View>
-              <Text style={styles.npcName}>{frame.npc}</Text>
+              <Text style={styles.npcName}>{enc.npc}</Text>
             </View>
             <ScrollView style={styles.textScroll} showsVerticalScrollIndicator={false}>
-              <Text style={styles.dialogueTxt}>{frame.text}</Text>
+              <Text style={styles.dialogueTxt}>{enc.text}</Text>
             </ScrollView>
           </View>
         </View>
 
         {/* Action area */}
         <View style={styles.actionArea}>
-          {frame.mode === 'dialogue' ? (
+          {enc.kind === 'dialogue' ? (
             <TouchableOpacity style={styles.acceptBtn} activeOpacity={0.8} onPress={goNext}>
               <Text style={styles.acceptBtnTxt}>รับทราบ  ▶</Text>
             </TouchableOpacity>
-          ) : step === 3 ? (
-            // Boss: INTERACT opens circuit board overlay
+          ) : enc.kind === 'boss' ? (
             <TouchableOpacity style={styles.acceptBtn} activeOpacity={0.8} onPress={() => setCircuitOpen(true)}>
               <Text style={styles.acceptBtnTxt}>🔌  INTERACT  ▶</Text>
             </TouchableOpacity>
           ) : (
-            <View style={styles.inputRow}>
-              <TextInput
-                style={styles.answerInput}
-                placeholder="พิมพ์คำตอบ..."
-                placeholderTextColor="#aaa"
-                value={answer}
-                onChangeText={setAnswer}
-                underlineColorAndroid="transparent"
-                keyboardType="numeric"
-              />
-              <TouchableOpacity style={styles.submitBtn} activeOpacity={0.8} onPress={goNext}>
-                <Text style={styles.submitBtnTxt}>▶</Text>
-              </TouchableOpacity>
-            </View>
+            <TouchableOpacity style={styles.acceptBtn} activeOpacity={0.8} onPress={() => setActiveSim(enc.sim)}>
+              <Text style={styles.acceptBtnTxt}>⚔️  เผชิญหน้า  ▶</Text>
+            </TouchableOpacity>
           )}
         </View>
 
-        {/* ── Circuit Board Overlay (Boss only) ─────────────────────── */}
-
       </View>
+      </TouchableWithoutFeedback>
+      </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }
@@ -358,10 +354,6 @@ const WIRE_LEGEND = [
 ];
 
 // ── Auto wire router ─────────────────────────────────────────────────────────
-// You never draw wires by hand — just declare connections {from,to} as data and
-// this builds a clean, non-overlapping path between the two measured pins.
-// Each wire gets its own vertical "lane" in the gap so wires never sit on top
-// of each other (sorted by mid-height to minimise crossings).
 function roundedPath(pts, r = 7) {
   if (!pts.length) return '';
   let d = `M ${pts[0][0]} ${pts[0][1]}`;
@@ -378,13 +370,12 @@ function roundedPath(pts, r = 7) {
   return d;
 }
 
-// items: [{ s:{x,y}, e:{x,y}, color }]  →  [{ d, color }]
 function routeWires(items) {
   if (!items.length) return [];
   const espX = Math.max(...items.map(it => it.s.x));
   const senX = Math.min(...items.map(it => it.e.x));
   let gapL = espX + 14, gapR = senX - 14;
-  if (gapR < gapL) { const m = (espX + senX) / 2; gapL = gapR = m; } // tight fallback
+  if (gapR < gapL) { const m = (espX + senX) / 2; gapL = gapR = m; }
   const sorted = [...items].sort((a, b) => (a.s.y + a.e.y) - (b.s.y + b.e.y));
   const n = sorted.length;
   sorted.forEach((it, idx) => {
@@ -408,16 +399,13 @@ function WireLayer({ wires, width, height }) {
   );
 }
 
-// Fire + smoke + sparks + scorch, anchored at a fault point (stage coords).
 function DamageFX({ x, y, fire, spark, smoke }) {
   const flameSY = fire.interpolate({ inputRange: [0, 1], outputRange: [0.75, 1.35] });
   const flameOp = fire.interpolate({ inputRange: [0, 1], outputRange: [0.65, 1] });
   const puffLX = [-12, 6, -3, 13];
   return (
     <View pointerEvents="none" style={{ position: 'absolute', left: x - 45, top: y - 78, width: 90, height: 150, alignItems: 'center', justifyContent: 'flex-end' }}>
-      {/* scorch mark (persists while fried) */}
       <View style={{ position: 'absolute', bottom: 50, width: 56, height: 30, borderRadius: 28, backgroundColor: 'rgba(8,4,2,0.72)' }} />
-      {/* smoke puffs */}
       {smoke.map((v, i) => {
         const ty = v.interpolate({ inputRange: [0, 1], outputRange: [0, -92] });
         const op = v.interpolate({ inputRange: [0, 0.15, 1], outputRange: [0, 0.5, 0] });
@@ -426,13 +414,11 @@ function DamageFX({ x, y, fire, spark, smoke }) {
           <Animated.View key={i} style={{ position: 'absolute', bottom: 64, left: 45 + puffLX[i], width: 20, height: 20, borderRadius: 10, backgroundColor: '#8c8c8c', opacity: op, transform: [{ translateY: ty }, { scale: sc }] }} />
         );
       })}
-      {/* flame */}
       <Animated.View style={{ position: 'absolute', bottom: 48, width: 30, height: 48, opacity: flameOp, transform: [{ scaleY: flameSY }] }}>
         <View style={{ position: 'absolute', bottom: 0, left: 3, width: 24, height: 42, borderRadius: 12, borderTopLeftRadius: 15, borderTopRightRadius: 15, backgroundColor: '#E5484D' }} />
         <View style={{ position: 'absolute', bottom: 0, left: 7, width: 16, height: 30, borderRadius: 9, backgroundColor: '#F2901E' }} />
         <View style={{ position: 'absolute', bottom: 0, left: 10, width: 10, height: 18, borderRadius: 6, backgroundColor: '#FFD45A' }} />
       </Animated.View>
-      {/* sparks */}
       {[0, 1, 2, 3, 4, 5].map(i => {
         const ang = (Math.PI * 2 / 6) * i;
         const tx = spark.interpolate({ inputRange: [0, 1], outputRange: [0, Math.cos(ang) * 40] });
@@ -446,25 +432,19 @@ function DamageFX({ x, y, fire, spark, smoke }) {
   );
 }
 
-// ── Wire renderer — vertical-first routing (ESP on top → sensor below) ───────
-// V1 (down) → H (across, at a staggered mid-Y) → V2 (down into sensor pin)
 function CpWireV({ x1, y1, x2, y2, color = '#C97D10', offset = 0 }) {
   const T = 5;
   const R = T / 2;
-  let my = Math.min(y1, y2) + 16 + offset;          // staggered crossbar
+  let my = Math.min(y1, y2) + 16 + offset;
   const maxMy = Math.max(y1, y2) - 8;
   if (my > maxMy) my = (y1 + y2) / 2;
   const s = (extra) => ({ position: 'absolute', backgroundColor: color, ...extra });
   const vTop = Math.min(y1, my), vH = Math.abs(my - y1);
   const v2Top = Math.min(my, y2), v2H = Math.abs(y2 - my);
-
   return (
     <>
-      {/* V1: y1 → my at x1 */}
       <View pointerEvents="none" style={s({ left: x1 - R, top: vTop - R, width: T, height: vH + T })} />
-      {/* H: x1 → x2 at my */}
       <View pointerEvents="none" style={s({ left: Math.min(x1, x2) - R, top: my - R, width: Math.abs(x2 - x1) + T, height: T })} />
-      {/* V2: my → y2 at x2 */}
       <View pointerEvents="none" style={s({ left: x2 - R, top: v2Top - R, width: T, height: v2H + T })} />
     </>
   );
@@ -477,17 +457,14 @@ function CpWire({ x1, y1, x2, y2, color = '#C97D10' }) {
   const dy   = Math.abs(y2 - y1);
   const minY = Math.min(y1, y2);
   const s = (extra) => ({ position: 'absolute', backgroundColor: color, ...extra });
-
   return (
     <>
-      {/* H1: x1 → mx (works for both left→right and right→left) */}
       <View pointerEvents="none" style={s({
         left:   Math.min(x1, mx) - R,
         top:    y1 - R,
         width:  Math.abs(mx - x1) + T,
         height: T,
       })} />
-      {/* V: vertical bridge at mx */}
       {dy > 1 && (
         <View pointerEvents="none" style={s({
           left:   mx - R,
@@ -496,7 +473,6 @@ function CpWire({ x1, y1, x2, y2, color = '#C97D10' }) {
           height: dy + T,
         })} />
       )}
-      {/* H2: mx → x2 */}
       <View pointerEvents="none" style={s({
         left:   Math.min(mx, x2) - R,
         top:    y2 - R,
@@ -507,29 +483,22 @@ function CpWire({ x1, y1, x2, y2, color = '#C97D10' }) {
   );
 }
 
-// ── CircuitPuzzle component ───────────────────────────────────────────────────
+// ── CircuitPuzzle component (Connect archetype) ───────────────────────────────
 function CircuitPuzzle({ onSuccess, onClose }) {
   const [selectedSensor, setSelectedSensor] = useState(null);
   const [activePinId,    setActivePinId]    = useState(null);
   const [connections,    setConnections]    = useState([]);
-  const [result,         setResult]         = useState(null); // 'correct' | 'fried' | 'dead'
+  const [result,         setResult]         = useState(null);
   const [wrongIds,       setWrongIds]       = useState([]);
   const [failMsg,        setFailMsg]        = useState('');
 
-  // ── Real pin positions, measured relative to the board ───────────────
-  // Instead of guessing from fixed constants (which breaks across screen
-  // sizes & label widths), we measure each dot's true center vs the board.
-  const BOARD_BORDER = 2.5; // cp.board borderWidth — absolute children start inside it
-
-  // Live board size → scales the device art to fit any screen.
+  const BOARD_BORDER = 2.5;
   const [boardSize, setBoardSize] = useState({ w: SW - 28, h: 380 });
 
-  // ── Pinch-to-zoom + pan (built-in Animated + PanResponder, 1x–3x) ───────
   const MIN_Z = 1, MAX_Z = 3;
   const scaleV = useRef(new Animated.Value(1)).current;
   const txV = useRef(new Animated.Value(0)).current;
   const tyV = useRef(new Animated.Value(0)).current;
-  // Live numeric mirror + gesture start snapshot (PanResponder runs on JS).
   const z = useRef({
     scale: 1, tx: 0, ty: 0,
     startScale: 1, startTx: 0, startTy: 0, startDist: 0,
@@ -556,8 +525,6 @@ function CircuitPuzzle({ onSuccess, onClose }) {
   const dist = (t) => Math.hypot(t[0].pageX - t[1].pageX, t[0].pageY - t[1].pageY);
 
   const panResponder = useRef(PanResponder.create({
-    // Record taps here without capturing, so a double-tap resets zoom while
-    // single taps still pass through to the pins.
     onStartShouldSetPanResponderCapture: (e) => {
       if (e.nativeEvent.touches.length <= 1) {
         const now = Date.now();
@@ -567,7 +534,6 @@ function CircuitPuzzle({ onSuccess, onClose }) {
       return false;
     },
     onStartShouldSetPanResponder: () => false,
-    // Only grab the gesture on a real drag / two-finger pinch.
     onMoveShouldSetPanResponder: (e, g) =>
       e.nativeEvent.touches.length === 2 || Math.abs(g.dx) > 6 || Math.abs(g.dy) > 6,
     onPanResponderGrant: () => {
@@ -589,7 +555,6 @@ function CircuitPuzzle({ onSuccess, onClose }) {
     onPanResponderTerminate: () => { z.startDist = 0; applyZoom(); },
   })).current;
 
-  // ── Damage FX (fire / smoke / sparks / screen shake) ────────────────────
   const shakeX  = useRef(new Animated.Value(0)).current;
   const fxFire  = useRef(new Animated.Value(0)).current;
   const fxSpark = useRef(new Animated.Value(0)).current;
@@ -619,7 +584,6 @@ function CircuitPuzzle({ onSuccess, onClose }) {
     return () => loops.forEach(l => l.stop && l.stop());
   }, [result]);
 
-  // Brief feedback when the player taps a locked (unused) pin.
   const [lockedHint, setLockedHint] = useState(false);
   const lockTimer = useRef(null);
   const handleLockedTap = () => {
@@ -628,9 +592,6 @@ function CircuitPuzzle({ onSuccess, onClose }) {
     lockTimer.current = setTimeout(() => setLockedHint(false), 1700);
   };
   useEffect(() => () => { if (lockTimer.current) clearTimeout(lockTimer.current); }, []);
-
-  // Pin positions are computed directly from layout (see pinXY in the sizing
-  // block) so the dots and the wires always share the exact same coordinates.
 
   const handlePickSensor = (id) => {
     setSelectedSensor(id);
@@ -642,16 +603,12 @@ function CircuitPuzzle({ onSuccess, onClose }) {
   };
 
   const handlePinTap = (id) => {
-    if (result) return;   // locked until reset (component may be fried)
-
+    if (result) return;
     if (!activePinId) { setActivePinId(id); return; }
     if (activePinId === id) { setActivePinId(null); return; }
-
     const activeIsSen = activePinId.startsWith('sen_');
     const tapIsSen    = id.startsWith('sen_');
-    // Must connect sensor ↔ ESP32; same-side tap just switches selection
     if (activeIsSen === tapIsSen) { setActivePinId(id); return; }
-
     const [from, to] = activeIsSen ? [activePinId, id] : [id, activePinId];
     const next = connections.filter(c => c.from !== from && c.to !== to);
     setConnections([...next, { from, to }]);
@@ -661,13 +618,10 @@ function CircuitPuzzle({ onSuccess, onClose }) {
 
   const handleRun = () => {
     if (!selectedSensor || connections.length === 0) return;
-
-    // What each sensor pin is wired to on the ESP
     const espOf = {};
     connections.forEach(c => { espOf[c.from] = c.to; });
     const vccTo = espOf['sen_vcc'], gndTo = espOf['sen_gnd'], sigTo = espOf['sen_sig'];
 
-    // 1) DAMAGING faults → fire & smoke (reverse polarity / power on wrong pin)
     if (vccTo === 'esp_gnd' || gndTo === 'esp_vcc') {
       setWrongIds(connections.map(c => c.from));
       setFailMsg('กลับขั้วไฟ (VCC ↔ GND) → ลัดวงจร กระแสพุ่งสูง อุปกรณ์ไหม้!');
@@ -678,22 +632,16 @@ function CircuitPuzzle({ onSuccess, onClose }) {
       setFailMsg('จ่ายไฟ 3V3 เข้าขาสัญญาณ (OUT) โดยตรง → ขาสัญญาณไหม้!');
       setResult('fried'); return;
     }
-
-    // 2) Wrong sensor type → powers up but never detects motion
     if (selectedSensor !== CORRECT_SENSOR) {
       setFailMsg('เซนเซอร์ผิดชนิด — มีไฟเข้าแต่ตรวจจับการเคลื่อนไหวไม่ได้');
       setResult('dead'); return;
     }
-
-    // 3) Correct
     const allOk = CORRECT_WIRES.every(w =>
       connections.some(c => c.from === w.from && c.to === w.to)
     );
     if (allOk && connections.length === CORRECT_WIRES.length) {
       setResult('correct'); return;
     }
-
-    // 4) Non-damaging miswire / incomplete → sensor just doesn't work
     const bad = connections.filter(c =>
       !CORRECT_WIRES.some(w => w.from === c.from && w.to === c.to)
     );
@@ -712,7 +660,6 @@ function CircuitPuzzle({ onSuccess, onClose }) {
   };
 
   const wireColor = (conn) => wrongIds.includes(conn.from) ? WIRE_ERROR : (WIRE_PALETTE[conn.from] || '#C97D10');
-  // Colour for a pin's connected ring (matches the wire attached to it)
   const connColorFor = (pinId) => {
     const c = connections.find(x => x.from === pinId || x.to === pinId);
     if (!c) return null;
@@ -720,14 +667,13 @@ function CircuitPuzzle({ onSuccess, onClose }) {
   };
   const sensor = SENSORS.find(s => s.id === selectedSensor);
 
-  // ── Adaptive sizing: ESP32 (vertical) on left, sensor on right ───────
   const BPAD = 16;
   const contentW = Math.max(200, boardSize.w - BPAD * 2);
   const contentH = Math.max(200, boardSize.h - BPAD * 2);
 
-  let espH = contentH;                          // try to fill height
+  let espH = contentH;
   let espW = espH * ESP_VB.w / ESP_VB.h;
-  const espMaxW = contentW * 0.46;              // ...but leave room for sensor
+  const espMaxW = contentW * 0.46;
   if (espW > espMaxW) { espW = espMaxW; espH = espW * ESP_VB.h / ESP_VB.w; }
   const sE = espW / ESP_VB.w;
 
@@ -736,8 +682,6 @@ function CircuitPuzzle({ onSuccess, onClose }) {
   if (senH > contentH) { senH = contentH; senW = senH * SENSOR_VB.w / SENSOR_VB.h; }
   const sS = senW / SENSOR_VB.w;
 
-  // Touch-zone sizing: keep each pin's tap area shorter than the pin pitch so
-  // neighbouring pins never overlap (the cause of "only the top pin is tappable").
   const espPitchPx = (() => {
     const r = ESP_PADS.filter(p => p.side === 'R');
     return (r.length > 1 ? r[1].y - r[0].y : 16) * sE;
@@ -757,10 +701,8 @@ function CircuitPuzzle({ onSuccess, onClose }) {
   const boardInnerW = Math.max(0, boardSize.w - BOARD_BORDER * 2);
   const boardInnerH = Math.max(0, boardSize.h - BOARD_BORDER * 2);
 
-  const espActive = ESP_PADS.filter(p => p.active);          // board order, top→bottom
+  const espActive = ESP_PADS.filter(p => p.active);
 
-  // ── Pin position (NO measure): dots & wires use the same formula, on the ──
-  // real pads. Small dots; tap precision comes from pinch-to-zoom.
   const pinXY = (id) => {
     const ep = ESP_PADS.find(p => p.id === id);
     if (ep) return { x: espLeft + ep.x * sE, y: espTop + ep.y * sE };
@@ -769,7 +711,6 @@ function CircuitPuzzle({ onSuccess, onClose }) {
     return null;
   };
 
-  // ── Wire routing with LOCKED lanes (each ESP pin owns a fixed lane) ─────
   const laneCount = espActive.length;
   const espEdgeX  = espLeft + Math.max(...espActive.map(p => p.x)) * sE;
   const senEdgeX  = senLeft + Math.min(...SENSOR_PADS.map(p => p.x)) * sS;
@@ -779,20 +720,18 @@ function CircuitPuzzle({ onSuccess, onClose }) {
     laneCount <= 1 ? (gapL + gapR) / 2 : gapL + (gapR - gapL) * (slot / (laneCount - 1));
 
   const wireData = connections.map(conn => {
-    const s = pinXY(conn.to), e = pinXY(conn.from);   // s = ESP pin, e = sensor
+    const s = pinXY(conn.to), e = pinXY(conn.from);
     if (!s || !e) return null;
     const slot = Math.max(0, espActive.findIndex(p => p.id === conn.to));
     const lx = laneX(slot);
     return { color: wireColor(conn), w: 5, d: roundedPath([[s.x, s.y], [lx, s.y], [lx, e.y], [e.x, e.y]]) };
   }).filter(Boolean);
 
-  // Feed the live board size to the zoom clamp.
   z.innerW = boardInnerW; z.innerH = boardInnerH;
 
   return (
     <Animated.View style={[cp.screen, { transform: [{ translateX: shakeX }] }]}>
 
-      {/* ── Top bar ─────────────────────────────────── */}
       <View style={cp.topBar}>
         <TouchableOpacity onPress={onClose} style={cp.backBtn}>
           <Text style={cp.backBtnTxt}>◄ ออก</Text>
@@ -801,7 +740,6 @@ function CircuitPuzzle({ onSuccess, onClose }) {
         <Text style={cp.chapterTag}>CHAPTER 3</Text>
       </View>
 
-      {/* ── Mission parchment ───────────────────────── */}
       <View style={cp.parchment}>
         <Text style={cp.parchmentLabel}>📜  ภารกิจ</Text>
         <Text style={cp.parchmentTxt}>
@@ -811,18 +749,15 @@ function CircuitPuzzle({ onSuccess, onClose }) {
         </Text>
       </View>
 
-      {/* ── Circuit board (flex:1) — pinch to zoom, drag to pan ────────── */}
       <View
         style={cp.board}
         collapsable={false}
         onLayout={(e) => { const l = e?.nativeEvent?.layout; if (l) setBoardSize({ w: l.width, h: l.height }); }}
       >
-        {/* Corner rivets (fixed, not zoomed) */}
         {[{top:6,left:6},{top:6,right:6},{bottom:6,left:6},{bottom:6,right:6}].map((pos,i) => (
           <View key={i} style={[cp.rivet, pos]} />
         ))}
 
-        {/* Zoomable stage: board + sensor + wires + tap zones move as one unit */}
         <Animated.View
           {...panResponder.panHandlers}
           style={[
@@ -831,10 +766,8 @@ function CircuitPuzzle({ onSuccess, onClose }) {
             { transform: [{ translateX: txV }, { translateY: tyV }, { scale: scaleV }] },
           ]}
         >
-            {/* Wires — auto-routed lanes, drawn as one SVG layer */}
             <WireLayer wires={wireData} width={boardInnerW} height={boardInnerH} />
 
-            {/* LEFT — ESP32 DevKit (only 3V3 / GND / D2 are usable) */}
             <View style={[cp.device, { left: espLeft, top: espTop, width: espW, height: espH }]}>
               <Esp32Board w={espW} />
               {ESP_PADS.map(p => {
@@ -853,17 +786,14 @@ function CircuitPuzzle({ onSuccess, onClose }) {
                 const isConn   = connections.some(c => c.to === p.id);
                 return (
                   <React.Fragment key={p.key}>
-                    {/* green name chip — makes usable pins easy to spot */}
                     <View pointerEvents="none" style={[cp.pinChip, { left: cx - 8 - 30, top: cy - 8 }]}>
                       <Text style={cp.pinChipTxt} numberOfLines={1}>{p.label}</Text>
                     </View>
-                    {/* small tap zone, sized to the pin pitch so it never overlaps */}
                     <TouchableOpacity
                       onPress={() => handlePinTap(p.id)}
                       activeOpacity={0.7}
                       style={[cp.hitZone, { left: cx - 16, top: cy - espHitH / 2, width: 28, height: espHitH }]}
                     />
-                    {/* small dot on the real pad */}
                     <View
                       pointerEvents="none"
                       style={[
@@ -879,7 +809,6 @@ function CircuitPuzzle({ onSuccess, onClose }) {
               })}
             </View>
 
-            {/* RIGHT — Sensor module */}
             {selectedSensor && sensor ? (
               <View style={[cp.device, { left: senLeft, top: senTop, width: senW, height: senH }]}>
                 <SensorModule type={sensor.id} w={senW} labels={SENSOR_PADS.map(p => senLabel(p.id))} />
@@ -908,9 +837,7 @@ function CircuitPuzzle({ onSuccess, onClose }) {
                     </React.Fragment>
                   );
                 })}
-                {/* fried → charred tint over the sensor */}
                 {result === 'fried' && <View pointerEvents="none" style={cp.friedTint} />}
-                {/* dead → sensor unpowered / not responding */}
                 {result === 'dead' && (
                   <View pointerEvents="none" style={cp.deadOverlay}>
                     <Text style={cp.deadTxt}>💤 ไม่ทำงาน</Text>
@@ -924,7 +851,6 @@ function CircuitPuzzle({ onSuccess, onClose }) {
               </View>
             )}
 
-            {/* Fire/smoke/sparks at the sensor when the circuit is fried */}
             {result === 'fried' && (
               <DamageFX
                 x={senLeft + senW / 2}
@@ -937,12 +863,10 @@ function CircuitPuzzle({ onSuccess, onClose }) {
 
           </Animated.View>
 
-        {/* Zoom hint (fixed) */}
         <View pointerEvents="none" style={cp.zoomHint}>
           <Text style={cp.zoomHintTxt}>🔍 จีบนิ้วซูม · ลากเลื่อน · แตะสองครั้งรีเซ็ต</Text>
         </View>
 
-        {/* ── Result overlay (absolute, fixed → not zoomed) ──────── */}
         {result && (
           <View style={cp.resultOverlay} pointerEvents="box-none">
             <View style={cp.resultCard}>
@@ -968,7 +892,6 @@ function CircuitPuzzle({ onSuccess, onClose }) {
         )}
       </View>
 
-      {/* ── Wire colour legend ───────────────────────── */}
       {selectedSensor && (
         <View style={cp.legend}>
           {WIRE_LEGEND.map((it, i) => (
@@ -980,7 +903,6 @@ function CircuitPuzzle({ onSuccess, onClose }) {
         </View>
       )}
 
-      {/* ── Status bar (fixed height → never reflows the board) ───────── */}
       <View style={cp.statusBar}>
         {result ? (
           <Text style={[cp.statusTxt, { color: result === 'correct' ? '#4CAF50' : '#E8908F' }]} numberOfLines={1}>
@@ -1005,7 +927,6 @@ function CircuitPuzzle({ onSuccess, onClose }) {
         )}
       </View>
 
-      {/* ── Sensor inventory ─────────────────────────── */}
       <View style={cp.inventory}>
         <Text style={cp.inventoryLabel}>◈  คลังเซนเซอร์  —  แตะเพื่อเลือก</Text>
         <View style={cp.inventoryRow}>
@@ -1027,7 +948,6 @@ function CircuitPuzzle({ onSuccess, onClose }) {
         </View>
       </View>
 
-      {/* ── Run button ───────────────────────────────── */}
       <TouchableOpacity
         style={[cp.runBtn, (!selectedSensor || connections.length === 0 || result === 'correct') && cp.runBtnDim]}
         onPress={handleRun}
@@ -1042,8 +962,6 @@ function CircuitPuzzle({ onSuccess, onClose }) {
 
 const cp = StyleSheet.create({
   screen: { flex: 1, backgroundColor: '#0D1117' },
-
-  // Top bar
   topBar: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
     backgroundColor: '#161B22',
@@ -1057,8 +975,6 @@ const cp = StyleSheet.create({
   backBtnTxt: { color: '#aaa', fontSize: 12, fontWeight: '600' },
   title: { fontSize: 14, fontWeight: 'bold', color: '#FFD700', letterSpacing: 1 },
   chapterTag: { color: '#C97D10', fontSize: 11, fontWeight: '700', letterSpacing: 1 },
-
-  // Parchment scroll
   parchment: {
     backgroundColor: '#F7E7C4',
     marginHorizontal: 14, marginTop: 12,
@@ -1067,8 +983,6 @@ const cp = StyleSheet.create({
   },
   parchmentLabel: { fontSize: 11, fontWeight: '800', color: '#8B4513', marginBottom: 2 },
   parchmentTxt: { fontSize: 12, color: '#3B2010', lineHeight: 17 },
-
-  // Board (flex:1, takes main space)
   board: {
     flex: 1,
     backgroundColor: '#1C1008',
@@ -1076,7 +990,7 @@ const cp = StyleSheet.create({
     marginHorizontal: 14, marginTop: 12,
     padding: 16,
     position: 'relative',
-    overflow: 'hidden',          // clip the zoomed/panned stage inside the frame
+    overflow: 'hidden',
   },
   stage: { position: 'absolute', left: 0, top: 0 },
   friedTint: {
@@ -1093,38 +1007,14 @@ const cp = StyleSheet.create({
     position: 'absolute', width: 8, height: 8,
     borderRadius: 4, backgroundColor: '#5A3010', zIndex: 20,
   },
-
-  // Device containers (art + overlaid tappable pins)
   device: { position: 'absolute' },
   emptyDevice: {
     position: 'absolute',
     borderWidth: 2, borderColor: '#333', borderRadius: 8,
     alignItems: 'center', justifyContent: 'center', backgroundColor: '#111',
   },
-  hotspot: {
-    position: 'absolute', width: 34, height: 34,
-    alignItems: 'center', justifyContent: 'center', zIndex: 5,
-  },
-  hitZone: {
-    position: 'absolute', zIndex: 6, backgroundColor: 'transparent',
-  },
-  fanZone: {
-    position: 'absolute', zIndex: 7, backgroundColor: 'transparent',
-  },
-  fanDot: {
-    width: 20, height: 20, borderRadius: 10, borderWidth: 2.5,
-  },
-  fanLabel: {
-    position: 'absolute', zIndex: 6,
-    minWidth: 34, height: 18, borderRadius: 5,
-    backgroundColor: 'rgba(10,12,16,0.9)',
-    alignItems: 'center', justifyContent: 'center',
-    paddingHorizontal: 4,
-  },
-  fanLabelTxt: { color: '#8FE6A8', fontSize: 10, fontWeight: '700', fontFamily: 'monospace' },
-  lockHotspot: {
-    position: 'absolute', zIndex: 4,
-  },
+  hitZone: { position: 'absolute', zIndex: 6, backgroundColor: 'transparent' },
+  lockHotspot: { position: 'absolute', zIndex: 4 },
   legend: {
     flexDirection: 'row', justifyContent: 'center', flexWrap: 'wrap',
     marginHorizontal: 14, marginTop: 8, gap: 14,
@@ -1167,92 +1057,7 @@ const cp = StyleSheet.create({
     position: 'absolute', bottom: 8, left: 0, right: 0, alignItems: 'center', zIndex: 15,
   },
   zoomHintTxt: { color: 'rgba(220,200,160,0.55)', fontSize: 10.5, fontWeight: '600' },
-  pinPill: {
-    position: 'absolute', zIndex: 6,
-    backgroundColor: 'rgba(13,17,22,0.86)',
-    borderRadius: 5, paddingHorizontal: 5, paddingVertical: 2,
-  },
-  pinPillTxt: { color: '#8FE6A8', fontSize: 10, fontWeight: '700' },
-  hintStripLock: { borderLeftColor: '#D94040', backgroundColor: '#2a1212' },
-
-  // ESP32 column
-  espCol: { width: 110, gap: 0 },
-  chipArt: {
-    width: '100%',
-    height: 132,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 10,
-  },
-  chipName: {
-    color: '#4CAF50', fontSize: 9, fontWeight: 'bold',
-    letterSpacing: 0.5, marginTop: 3, textAlign: 'center',
-  },
-  invArt: {
-    height: 44, alignItems: 'center', justifyContent: 'center',
-  },
-  chipCard: {
-    width: '100%',
-    backgroundColor: '#0D2010',
-    borderWidth: 2, borderColor: '#2E7D32',
-    borderRadius: 8, padding: 8,
-    alignItems: 'center', gap: 2, marginBottom: 10,
-  },
-  chipIconTxt: { fontSize: 22, color: '#4CAF50' },
-  chipNameTxt: {
-    color: '#4CAF50', fontSize: 9, fontWeight: 'bold',
-    textAlign: 'center', letterSpacing: 0.5,
-  },
-
-  // Pin rows
-  pinRowLeft: {
-    flexDirection: 'row', alignItems: 'center',
-    justifyContent: 'flex-end', gap: 8, paddingVertical: 10,
-  },
-  pinLabelLeft: { color: '#8b8', fontSize: 12, fontWeight: '600' },
-  pinRowRight: {
-    width: '100%',
-    flexDirection: 'row', alignItems: 'center',
-    justifyContent: 'flex-start', gap: 8, paddingVertical: 10,
-  },
-  pinLabelRight: { color: '#ddd', fontSize: 12, fontWeight: '600' },
-
-  // Pin dots
-  pinDot: {
-    width: 20, height: 20, borderRadius: 10,
-    borderWidth: 2, borderColor: '#fff',
-  },
-  pinDotGreen:     { backgroundColor: '#2E7D32' },
-  pinDotActive:    { borderColor: '#FFD700', borderWidth: 3, transform: [{ scale: 1.3 }] },
-  pinDotConnected: { borderColor: '#C97D10', borderWidth: 3 },
-  pinDotWrong:     { borderColor: '#D94040', borderWidth: 3 },
-
-  // Sensor column
-  senCol: { width: 110, gap: 0, alignItems: 'flex-end' },
-  emptySlot: {
-    flex: 1, width: '100%',
-    borderWidth: 2, borderColor: '#333',
-    borderRadius: 8, alignItems: 'center', justifyContent: 'center',
-    backgroundColor: '#111',
-  },
-  emptySlotQ:   { color: '#444', fontSize: 28, fontWeight: 'bold' },
-  emptySlotTxt: { color: '#444', fontSize: 9, textAlign: 'center', marginTop: 4 },
-
-  // Active pin hint
-  hintStrip: {
-    backgroundColor: '#252010', marginHorizontal: 14, marginTop: 8,
-    borderRadius: 6, padding: 8,
-    borderLeftWidth: 3, borderLeftColor: '#FFD700',
-  },
-  hintStripTxt: { color: '#FFD700', fontSize: 11, fontWeight: '600' },
-
-  // Feedback
-  feedbackBox: {
-    marginHorizontal: 14, marginTop: 8,
-    backgroundColor: '#161B22',
-    borderRadius: 10, borderWidth: 1.5, borderColor: '#2a2a3a',
-    padding: 12, alignItems: 'center', gap: 10,
-  },
+  invArt: { height: 44, alignItems: 'center', justifyContent: 'center' },
   feedbackOk:  { color: '#4CAF50', fontSize: 14, fontWeight: '700' },
   feedbackBad: { color: '#D94040', fontSize: 12, fontWeight: '600', textAlign: 'center' },
   nextBtn: {
@@ -1265,8 +1070,6 @@ const cp = StyleSheet.create({
     borderRadius: 8, borderWidth: 1.5, borderColor: '#D94040',
   },
   retryBtnTxt: { color: '#D94040', fontSize: 13, fontWeight: '600' },
-
-  // Sensor inventory
   inventory: {
     backgroundColor: '#161B22',
     paddingHorizontal: 14, paddingTop: 10, paddingBottom: 8,
@@ -1282,11 +1085,8 @@ const cp = StyleSheet.create({
     backgroundColor: '#1a1a2a', minWidth: 60,
   },
   inventoryItemActive: { borderColor: '#C97D10', backgroundColor: '#2a1a08' },
-  inventoryIcon: { fontSize: 22 },
   inventoryName: { color: '#888', fontSize: 10, fontWeight: '700' },
   inventoryNameActive: { color: '#FFD700' },
-
-  // Run button
   runBtn: {
     backgroundColor: '#C97D10',
     marginHorizontal: 14, marginBottom: 16, marginTop: 10,
@@ -1299,175 +1099,43 @@ const cp = StyleSheet.create({
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: '#0e0e1a' },
-
-  // ── Intro ──────────────────────────────────────
-  introRoot: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 28,
-    gap: 12,
-  },
-  chapterLabel: {
-    color: '#fff',
-    fontSize: 22,
-    fontWeight: 'bold',
-    letterSpacing: 2,
-  },
+  introRoot: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 28, gap: 12 },
+  chapterLabel: { color: '#fff', fontSize: 22, fontWeight: 'bold', letterSpacing: 2 },
   chapterIconRow: { fontSize: 28 },
-  chapterTitle: {
-    color: '#d4c9a8',
-    fontSize: 16,
-    fontWeight: '600',
-    textAlign: 'center',
-    lineHeight: 24,
-  },
-  introBox: {
-    width: '100%',
-    backgroundColor: '#1c1c30',
-    borderRadius: 12,
-    borderWidth: 1.5,
-    borderColor: '#3a3a5c',
-    padding: 14,
-    gap: 12,
-  },
-  introDesc: {
-    color: '#ccc',
-    fontSize: 13,
-    lineHeight: 20,
-    textAlign: 'center',
-  },
-  npcLineup: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    gap: 10,
-  },
-  npcChip: {
-    alignItems: 'center',
-    backgroundColor: '#2a2a45',
-    borderRadius: 8,
-    padding: 8,
-    minWidth: 52,
-    borderWidth: 1,
-    borderColor: '#4a4a6a',
-  },
-  npcChipBoss: {
-    borderColor: '#D94040',
-    backgroundColor: '#3a1a1a',
-  },
+  chapterTitle: { color: '#d4c9a8', fontSize: 16, fontWeight: '600', textAlign: 'center', lineHeight: 24 },
+  introBox: { width: '100%', backgroundColor: '#1c1c30', borderRadius: 12, borderWidth: 1.5, borderColor: '#3a3a5c', padding: 14, gap: 12 },
+  introDesc: { color: '#ccc', fontSize: 13, lineHeight: 20, textAlign: 'center' },
+  npcLineup: { flexDirection: 'row', justifyContent: 'center', gap: 8 },
+  npcChip: { alignItems: 'center', backgroundColor: '#2a2a45', borderRadius: 8, padding: 8, minWidth: 48, borderWidth: 1, borderColor: '#4a4a6a' },
+  npcChipBoss: { borderColor: '#D94040', backgroundColor: '#3a1a1a' },
   npcChipIcon: { fontSize: 20 },
   npcChipTxt: { color: '#aaa', fontSize: 10, fontWeight: '700', marginTop: 2 },
   npcChipBossTxt: { color: '#D94040' },
-  introStarRow: {
-    alignItems: 'center',
-    gap: 4,
-  },
+  introStarRow: { alignItems: 'center', gap: 4 },
   introStarTxt: { color: '#E8A020', fontSize: 15, fontWeight: '700' },
   introRewardTxt: { color: '#aaa', fontSize: 13 },
-
-  // ── Clear ──────────────────────────────────────
-  clearRoot: {
-    alignItems: 'center',
-    paddingHorizontal: 20,
-    paddingTop: 32,
-    paddingBottom: 40,
-    gap: 12,
-  },
-  clearTitle: {
-    color: '#4CAF50',
-    fontSize: 24,
-    fontWeight: 'bold',
-    letterSpacing: 1,
-  },
+  clearRoot: { alignItems: 'center', paddingHorizontal: 20, paddingTop: 32, paddingBottom: 40, gap: 12 },
+  clearTitle: { color: '#4CAF50', fontSize: 24, fontWeight: 'bold', letterSpacing: 1 },
   clearParty: { fontSize: 48 },
-  clearBadgeRow: {
-    flexDirection: 'row',
-    gap: 10,
-  },
-  clearBadge: {
-    borderWidth: 1.5,
-    borderRadius: 14,
-    paddingHorizontal: 12,
-    paddingVertical: 4,
-  },
+  clearBadgeRow: { flexDirection: 'row', gap: 10 },
+  clearBadge: { borderWidth: 1.5, borderRadius: 14, paddingHorizontal: 12, paddingVertical: 4 },
   clearBadgeTxt: { fontWeight: 'bold', fontSize: 14 },
-  clearSubtitle: {
-    color: '#d4c9a8',
-    fontSize: 14,
-    fontWeight: '600',
-    textAlign: 'center',
-  },
-  scoreRow: {
-    flexDirection: 'row',
-    gap: 12,
-    width: '100%',
-  },
-  scoreBox: {
-    flex: 1,
-    backgroundColor: '#1c1c30',
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: '#3a3a5c',
-    alignItems: 'center',
-    paddingVertical: 10,
-  },
+  clearSubtitle: { color: '#d4c9a8', fontSize: 14, fontWeight: '600', textAlign: 'center' },
+  scoreRow: { flexDirection: 'row', gap: 12, width: '100%' },
+  scoreBox: { flex: 1, backgroundColor: '#1c1c30', borderRadius: 10, borderWidth: 1, borderColor: '#3a3a5c', alignItems: 'center', paddingVertical: 10 },
   scoreLabel: { color: '#aaa', fontSize: 12 },
   scoreValue: { fontSize: 22, fontWeight: 'bold', marginTop: 2 },
-  clearPanel: {
-    width: '100%',
-    backgroundColor: '#1c1c30',
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: '#3a3a5c',
-    padding: 14,
-  },
+  clearPanel: { width: '100%', backgroundColor: '#1c1c30', borderRadius: 10, borderWidth: 1, borderColor: '#3a3a5c', padding: 14 },
   clearPanelTxt: { color: '#ccc', fontSize: 13, lineHeight: 20 },
-  clearAnswer: { color: '#D94040', fontSize: 13, fontWeight: '600', marginTop: 8 },
-  clearCorrect: { color: '#4CAF50', fontSize: 13, fontWeight: '600' },
-  clearExplain: { color: '#aaa', fontSize: 12, lineHeight: 18 },
-  clearHintRow: {
-    width: '100%',
-    backgroundColor: '#1a2a1a',
-    borderRadius: 10,
-    padding: 12,
-    gap: 4,
-  },
+  clearHintRow: { width: '100%', backgroundColor: '#1a2a1a', borderRadius: 10, padding: 12, gap: 4 },
   clearHintTxt: { color: '#aaa', fontSize: 12 },
   clearHintLink: { color: '#D94040', fontSize: 12 },
-
-  // ── Shared button ──────────────────────────────
-  orangeBtn: {
-    width: '100%',
-    backgroundColor: '#C97D10',
-    borderRadius: 12,
-    paddingVertical: 14,
-    alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.3,
-    shadowRadius: 4,
-    elevation: 4,
-  },
+  orangeBtn: { width: '100%', backgroundColor: '#C97D10', borderRadius: 12, paddingVertical: 14, alignItems: 'center', shadowColor: '#000', shadowOffset: { width: 0, height: 3 }, shadowOpacity: 0.3, shadowRadius: 4, elevation: 4 },
   orangeBtnTxt: { color: '#fff', fontSize: 16, fontWeight: 'bold', letterSpacing: 0.5 },
   backLink: { color: '#888', fontSize: 14, marginTop: 4 },
-
-  // ── Battle ─────────────────────────────────────
   root: { flex: 1 },
   scene: { width: SW, height: SCENE_H, overflow: 'hidden' },
-  starBadge: {
-    position: 'absolute',
-    top: 10,
-    right: 12,
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#fff8e1',
-    borderRadius: 18,
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderWidth: 2,
-    borderColor: '#E8A020',
-    gap: 4,
-  },
+  starBadge: { position: 'absolute', top: 10, right: 12, flexDirection: 'row', alignItems: 'center', backgroundColor: '#fff8e1', borderRadius: 18, paddingHorizontal: 10, paddingVertical: 4, borderWidth: 2, borderColor: '#E8A020', gap: 4 },
   starEmoji: { fontSize: 14 },
   starCount: { fontWeight: 'bold', fontSize: 15, color: '#555' },
   playerPos: { position: 'absolute', left: SW * 0.13, bottom: GROUND_PX },
@@ -1476,87 +1144,23 @@ const styles = StyleSheet.create({
   bossPos: { position: 'absolute', right: SW * 0.10, bottom: GROUND_PX },
   orcClip: { width: ORC_W, height: ORC_H, overflow: 'hidden' },
   orcSheet: { width: ORC_W * ORC_FRAMES, height: ORC_H },
-  statsBar: {
-    flexDirection: 'row',
-    justifyContent: 'space-around',
-    alignItems: 'center',
-    backgroundColor: '#F7F1E5',
-    paddingVertical: 8,
-    paddingHorizontal: 6,
-    borderBottomWidth: 1,
-    borderBottomColor: '#e5e5e5',
-  },
-  statCard: {
-    alignItems: 'center',
-    borderWidth: 1.5,
-    borderRadius: 10,
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    minWidth: 88,
-  },
+  statsBar: { flexDirection: 'row', justifyContent: 'space-around', alignItems: 'center', backgroundColor: '#F7F1E5', paddingVertical: 8, paddingHorizontal: 6, borderBottomWidth: 1, borderBottomColor: '#e5e5e5' },
+  statCard: { alignItems: 'center', borderWidth: 1.5, borderRadius: 10, paddingHorizontal: 10, paddingVertical: 4, minWidth: 88 },
   statLabel: { fontSize: 9, fontWeight: '700', letterSpacing: 0.4, textTransform: 'uppercase' },
   statValue: { fontSize: 20, fontWeight: 'bold', marginTop: 1 },
-  panel: {
-    flex: 1,
-    backgroundColor: '#F7F1E5',
-    paddingHorizontal: 14,
-    paddingTop: 12,
-    paddingBottom: 4,
-  },
+  panel: { flex: 1, backgroundColor: '#F7F1E5', paddingHorizontal: 14, paddingTop: 12, paddingBottom: 4 },
   npcRow: { flex: 1, flexDirection: 'row', gap: 10 },
   avatarWrap: { alignItems: 'center', gap: 4 },
-  avatarBox: {
-    width: 52,
-    height: 52,
-    borderRadius: 10,
-    backgroundColor: '#f2f2f2',
-    borderWidth: 1.5,
-    borderColor: '#ddd',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
+  avatarBox: { width: 52, height: 52, borderRadius: 10, backgroundColor: '#f2f2f2', borderWidth: 1.5, borderColor: '#ddd', justifyContent: 'center', alignItems: 'center' },
   avatarEmoji: { fontSize: 28 },
   npcName: { fontSize: 11, fontWeight: '700', color: '#333', textAlign: 'center' },
   textScroll: { flex: 1 },
   dialogueTxt: { fontSize: 13, color: '#333', lineHeight: 20 },
   actionArea: { backgroundColor: '#F7F1E5', paddingHorizontal: 12, paddingVertical: 12 },
-  acceptBtn: {
-    backgroundColor: '#C97D10',
-    borderRadius: 12,
-    paddingVertical: 14,
-    alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.25,
-    shadowRadius: 4,
-    elevation: 4,
-  },
+  acceptBtn: { backgroundColor: '#C97D10', borderRadius: 12, paddingVertical: 14, alignItems: 'center', shadowColor: '#000', shadowOffset: { width: 0, height: 3 }, shadowOpacity: 0.25, shadowRadius: 4, elevation: 4 },
   acceptBtnTxt: { color: '#fff', fontSize: 16, fontWeight: 'bold', letterSpacing: 0.5 },
   inputRow: { flexDirection: 'row', gap: 8 },
-  answerInput: {
-    flex: 1,
-    borderWidth: 1.5,
-    borderColor: '#ddd',
-    borderRadius: 12,
-    paddingHorizontal: 14,
-    paddingVertical: 11,
-    fontSize: 14,
-    backgroundColor: '#fafafa',
-    color: '#333',
-  },
-  submitBtn: {
-    width: 48,
-    backgroundColor: '#C97D10',
-    borderRadius: 12,
-    justifyContent: 'center',
-    alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.2,
-    shadowRadius: 3,
-    elevation: 3,
-  },
+  answerInput: { flex: 1, borderWidth: 1.5, borderColor: '#ddd', borderRadius: 12, paddingHorizontal: 14, paddingVertical: 11, fontSize: 14, backgroundColor: '#fafafa', color: '#333' },
+  submitBtn: { width: 48, backgroundColor: '#C97D10', borderRadius: 12, justifyContent: 'center', alignItems: 'center', shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.2, shadowRadius: 3, elevation: 3 },
   submitBtnTxt: { color: '#fff', fontSize: 18, fontWeight: 'bold' },
-
-  // ── Circuit board overlay ───────────────────────────────────────
 });

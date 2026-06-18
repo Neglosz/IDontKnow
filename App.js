@@ -16,6 +16,7 @@ import SelectLens from './src/screen/SelectLens';
 import KnowledgeScreen from './src/screen/KnowledgeScreen';
 import CalibrateScreen from './src/screen/CalibrateScreen';
 import SkillTreeScreen from './src/screen/SkillTreeScreen';
+import Game from './src/screen/Game';
 
 function AppScreens() {
   const { user, isNewUser, clearNewUser } = useAuth();
@@ -48,12 +49,13 @@ function AppScreens() {
   return (
     <View style={{ flex: 1, backgroundColor: '#120E08' }}>
       <StatusBar style="dark" />
-      {screen === 'scan'         && <ScanScreen onNavigate={setScreen} />}
-      {screen === 'scan-loading' && <ScanLoading onNavigate={setScreen} />}
-      {screen === 'select-lens'  && <SelectLens onNavigate={setScreen} />}
-      {!['scan', 'scan-loading', 'select-lens'].includes(screen) && (
-        <ScanScreen onNavigate={setScreen} />
-      )}
+      {screen === 'scan'         && <ScanScreen onNavigate={navigate} />}
+      {screen === 'scan-loading' && <ScanLoading onNavigate={navigate} />}
+      {screen === 'select-lens'  && <SelectLens onNavigate={navigate} />}
+      {screen === 'learn'        && <KnowledgeScreen onNavigate={navigate} {...navParams} />}
+      {screen === 'calibrate'    && <CalibrateScreen onNavigate={navigate} {...navParams} />}
+      {screen === 'skill-tree'   && <SkillTreeScreen onNavigate={navigate} {...navParams} />}
+      {screen === 'game-hardware' && <Game onNavigate={navigate} {...navParams} />}
     </View>
   );
 }
@@ -68,32 +70,11 @@ export default function App() {
 
   return (
     <SafeAreaProvider>
-<<<<<<< HEAD
-      <AuthProvider>
-        <AppScreens />
-      </AuthProvider>
-=======
-    <View style={{ flex: 1, backgroundColor: '#120E08' }}>
-      {/* <StatusBar style="light" />
-
-      {screen === 'menu' && <MenuScreen onSelect={setScreen} />}
-      {screen === 'hardware' && <HardwareGame />}
-      {screen === 'software' && <SoftwareGame />} */}
-
-      {/* floating back button — only shown inside a game */}
-      {/* {screen !== 'menu' && (
-        <TouchableOpacity style={s.backBtn} onPress={() => setScreen('menu')}>
-          <Text style={s.backText}>← MENU</Text>
-        </TouchableOpacity>
-      )} */}
-      {screen === 'scan' && <ScanScreen onNavigate={navigate} />}
-      {screen === 'scan-loading' && <ScanLoading onNavigate={navigate} />}
-      {screen === 'select-lens' && <SelectLens onNavigate={navigate} />}
-      {screen === 'learn' && <KnowledgeScreen onNavigate={navigate} {...navParams} />}
-      {screen === 'calibrate' && <CalibrateScreen onNavigate={navigate} {...navParams} />}
-      {screen === 'skill-tree' && <SkillTreeScreen onNavigate={navigate} {...navParams} />}
-    </View>
->>>>>>> main
+      <View style={{ flex: 1, backgroundColor: '#120E08' }}>
+        <AuthProvider>
+          <AppScreens />
+        </AuthProvider>
+      </View>
     </SafeAreaProvider>
   );
 }
