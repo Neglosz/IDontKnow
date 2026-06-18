@@ -8,7 +8,6 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Svg, { Rect, Circle } from 'react-native-svg';
-import NavBar from '../components/NavBar';
 import { LinearGradient } from 'expo-linear-gradient';
 import Ionicons from '@expo/vector-icons/Ionicons';
 
@@ -183,8 +182,6 @@ export default function ScanScreen({ onNavigate }) {
                 </TouchableOpacity>
 
             </View>
-
-            <NavBar active="scan" />
         </SafeAreaView>
     );
 }

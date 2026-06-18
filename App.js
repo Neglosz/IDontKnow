@@ -2,6 +2,7 @@ import { StatusBar } from 'expo-status-bar';
 import { useState } from 'react';
 import { View, StyleSheet, Platform } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { useFonts } from 'expo-font';
 
 import { AuthProvider, useAuth } from './src/context/AuthContext';
@@ -17,6 +18,25 @@ import KnowledgeScreen from './src/screen/KnowledgeScreen';
 import CalibrateScreen from './src/screen/CalibrateScreen';
 import SkillTreeScreen from './src/screen/SkillTreeScreen';
 import Game from './src/screen/Game';
+import ProfileScreen from './src/screen/ProfileScreen';
+import SettingScreen from './src/screen/SettingScreen';
+import HistoryMap from './src/screen/HistoryMap';
+import ShopScreen from './src/screen/ShopScreen';
+import NavBar from './src/components/NavBar';
+
+// แมปหน้า -> แท็บ navbar ที่ active (หน้าไหนไม่อยู่ในนี้ = ไม่มี navbar เช่น scan-loading / game)
+const NAV_ACTIVE = {
+  scan:          'scan',
+  'select-lens': 'scan',
+  calibrate:     'scan',
+  learn:         'shop',
+  quest:         'quest',
+  'skill-tree':  'quest',
+  profile:       'profile',
+  setting:       'profile',
+  shop:          'shop',
+  map:           'map',
+};
 
 function AppScreens() {
   const { user, isNewUser, clearNewUser } = useAuth();
@@ -46,16 +66,26 @@ function AppScreens() {
     return <WelcomeScreen onStart={() => setScreen('create-character')} />;
   }
 
+  const navActive = NAV_ACTIVE[screen];
+
   return (
-    <View style={{ flex: 1, backgroundColor: '#120E08' }}>
+    <View style={{ flex: 1, backgroundColor: '#F7F1E5' }}>
       <StatusBar style="dark" />
-      {screen === 'scan'         && <ScanScreen onNavigate={navigate} />}
-      {screen === 'scan-loading' && <ScanLoading onNavigate={navigate} />}
-      {screen === 'select-lens'  && <SelectLens onNavigate={navigate} />}
-      {screen === 'learn'        && <KnowledgeScreen onNavigate={navigate} {...navParams} />}
-      {screen === 'calibrate'    && <CalibrateScreen onNavigate={navigate} {...navParams} />}
-      {screen === 'skill-tree'   && <SkillTreeScreen onNavigate={navigate} {...navParams} />}
-      {screen === 'game-hardware' && <Game onNavigate={navigate} {...navParams} />}
+      <View style={{ flex: 1 }}>
+        {screen === 'scan-loading'  ? <ScanLoading onNavigate={navigate} />
+         : screen === 'select-lens'  ? <SelectLens onNavigate={navigate} />
+         : screen === 'learn'        ? <KnowledgeScreen onNavigate={navigate} {...navParams} />
+         : screen === 'calibrate'    ? <CalibrateScreen onNavigate={navigate} {...navParams} />
+         : screen === 'skill-tree'   ? <SkillTreeScreen onNavigate={navigate} {...navParams} />
+         : screen === 'quest'        ? <SkillTreeScreen onNavigate={navigate} {...navParams} />
+         : screen === 'game-hardware' ? <Game onNavigate={navigate} {...navParams} />
+         : screen === 'profile'      ? <ProfileScreen onNavigate={navigate} />
+         : screen === 'setting'      ? <SettingScreen onNavigate={navigate} />
+         : screen === 'shop'         ? <ShopScreen onNavigate={navigate} />
+         : screen === 'map'          ? <HistoryMap onNavigate={navigate} />
+         : <ScanScreen onNavigate={navigate} />}
+      </View>
+      {navActive && <NavBar active={navActive} onPress={navigate} />}
     </View>
   );
 }
@@ -69,13 +99,15 @@ export default function App() {
   if (!fontsLoaded) return null;
 
   return (
-    <SafeAreaProvider>
-      <View style={{ flex: 1, backgroundColor: '#120E08' }}>
-        <AuthProvider>
-          <AppScreens />
-        </AuthProvider>
-      </View>
-    </SafeAreaProvider>
+    <GestureHandlerRootView style={{ flex: 1 }}>
+      <SafeAreaProvider>
+        <View style={{ flex: 1, backgroundColor: '#120E08' }}>
+          <AuthProvider>
+            <AppScreens />
+          </AuthProvider>
+        </View>
+      </SafeAreaProvider>
+    </GestureHandlerRootView>
   );
 }
 

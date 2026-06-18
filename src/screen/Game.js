@@ -20,6 +20,8 @@ import Svg, { Path } from 'react-native-svg';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import TraceWidthSim from './TraceWidthSim';
 import { SequenceSim, SelectSim, DiagnoseSim } from './simEngine';
+import BlockCodeSim from './SoftwareGame';
+import { FALLBACK_LESSON } from '../data/lessons';
 
 const { width: SW } = Dimensions.get('window');
 
@@ -39,34 +41,21 @@ const BG_H = 576;
 const SCENE_H = SW * (BG_H / BG_W);
 const GROUND_PX = SCENE_H * ((BG_H - 530) / BG_H);
 
-// ── ด่านย่อยทั้งหมด ────────────────────────────────────────────────────────
-// step 0 = Intro, step 1..6 = ด่านตาม ENCOUNTERS, step 7 = Clear
-//   kind:'dialogue' = ผู้เชี่ยวชาญสอน (กดรับทราบ)
-//   kind:'sim'      = simulation (Tune / Sequence / Select / Diagnose)
-//   kind:'boss'     = Connect = CircuitPuzzle (ต่อวงจร)
-const ENCOUNTERS = [
-  { kind: 'dialogue', npc: 'Professor', emoji: '🧑‍🏫',
-    text:
-      'การคำนวณขนาดเส้นทองแดง (Trace Width)\n\n' +
-      'จำไว้นะ ยิ่งกระแสไฟฟ้า (Current) ไหลผ่านบอร์ดมาก เส้นทองแดงก็ต้องยิ่งกว้างขึ้น\n\n' +
-      'สูตรพื้นฐาน:\nความกว้างเส้นทองแดง (mil) = กระแสไฟ (A) × 50\n\n' +
-      'ถ้าเส้นทองแดงเล็กเกินไป จะร้อนจนขาดได้!' },
+// ── โครงด่าน ────────────────────────────────────────────────────────────────
+// step 0 = Intro, step 1..N = ด่านตาม lesson.steps, step N+1 = Clear
+//   kind:'dialogue'  = ผู้เชี่ยวชาญสอน (กดรับทราบ)
+//   kind:'sim'       = simulation (Tune / Sequence / Select / Diagnose)
+//   kind:'blockcode' = ลากบล็อกโค้ด (software)
+//   kind:'boss'      = Connect = CircuitPuzzle (ต่อวงจร)
+// เนื้อหาทั้งหมดมาจาก src/data/lessons.js — ไฟล์นี้เป็นแค่ "เครื่องเล่นด่าน"
 
-  { kind: 'sim', sim: 'tune', current: 1, questId: 'trace_1A', npc: 'Skeleton', emoji: '💀',
-    text: 'แฮ่ บอร์ดนี้มีกระแสผ่าน 1 แอมแปร์ (1A) — ลากปรับความกว้างเส้นทองแดงให้พอดี!' },
-
-  { kind: 'sim', sim: 'sequence', npc: 'Slime', emoji: '🟢',
-    text: 'จะทำบอร์ดต้องทำตามลำดับ! เรียงขั้นตอนการผลิต PCB ให้ถูกต้อง' },
-
-  { kind: 'sim', sim: 'select', npc: 'Bat', emoji: '🦇',
-    text: 'เลือกตัวแปลงไฟที่เหมาะกับโจทย์ที่สุด — ผิดแล้วบอร์ดร้อนนะ!' },
-
-  { kind: 'sim', sim: 'diagnose', npc: 'Ghost', emoji: '👻',
-    text: 'เซนเซอร์ไม่ทำงาน! วัดแต่ละขาแล้วหาให้เจอว่าพังตรงไหน' },
-
-  { kind: 'boss', npc: 'Orc แห่งความสับสน', emoji: '👹',
-    text: 'กี่! ต่อวงจรเซนเซอร์ให้ถูกต้องสิ ไม่งั้นประตูไม่เปิดหรอก!' },
-];
+// ป้าย/ไอคอนของแต่ละชนิดด่าน (ใช้ในแถว lineup หน้า Intro)
+const STEP_BADGE = {
+  dialogue:  { icon: '🧑‍🏫', label: 'PRO' },
+  sim:       { icon: '⚔️',  label: 'SIM' },
+  blockcode: { icon: '</>', label: 'CODE' },
+  boss:      { icon: '👹',  label: 'BOSS' },
+};
 
 function useSpriteAnim(frameCount, fps = 8) {
   const [frame, setFrame] = useState(0);
@@ -77,7 +66,10 @@ function useSpriteAnim(frameCount, fps = 8) {
   return frame;
 }
 
-export default function Game({ onNavigate }) {
+export default function Game({ onNavigate, lesson }) {
+  const LESSON = lesson ?? FALLBACK_LESSON;
+  const STEPS = LESSON.steps ?? [];
+
   const [step, setStep] = useState(0);
   const [answer, setAnswer] = useState('');
   const [combo, setCombo] = useState(1);
@@ -92,7 +84,7 @@ export default function Game({ onNavigate }) {
   // ไปด่านถัดไป (ใช้ร่วมทุก encounter)
   const goNext = () => {
     setCombo(c => c + 1);
-    setStars(s => Math.min(s + 1, ENCOUNTERS.length));
+    setStars(s => Math.min(s + 1, STEPS.length));
     setAnswer('');
     setStep(s => s + 1);
   };
@@ -102,30 +94,31 @@ export default function Game({ onNavigate }) {
     return (
       <SafeAreaView style={styles.safe}>
         <View style={styles.introRoot}>
-          <Text style={styles.chapterLabel}>CHAPTER 3</Text>
+          <Text style={styles.chapterLabel}>{LESSON.chapter}</Text>
           <Text style={styles.chapterIconRow}>⚙️  💰</Text>
-          <Text style={styles.chapterTitle}>PCB Layout & Routing{'\n'}DUNGEON</Text>
+          <Text style={styles.chapterTitle}>{LESSON.gameTitle}</Text>
 
           <View style={styles.introBox}>
-            <Text style={styles.introDesc}>
-              Hippo จะได้พบผู้เชี่ยวชาญและเหล่ามอนสเตอร์{'\n'}
-              เพื่อเรียนรู้ก่อนเผชิญหน้ากับ Boss Monster.....
-            </Text>
+            <Text style={styles.introDesc}>{LESSON.intro}</Text>
             <View style={styles.npcLineup}>
-              {['PRO', 'SIM', 'SIM', 'SIM', 'BOSS'].map((label, i) => (
-                <View key={i} style={[styles.npcChip, label === 'BOSS' && styles.npcChipBoss]}>
-                  <Text style={styles.npcChipIcon}>{label === 'BOSS' ? '👹' : label === 'PRO' ? '🧑‍🏫' : '⚔️'}</Text>
-                  <Text style={[styles.npcChipTxt, label === 'BOSS' && styles.npcChipBossTxt]}>
-                    {label}
-                  </Text>
-                </View>
-              ))}
+              {STEPS.map((st, i) => {
+                const badge = STEP_BADGE[st.kind] ?? STEP_BADGE.sim;
+                const isBoss = st.kind === 'boss';
+                return (
+                  <View key={i} style={[styles.npcChip, isBoss && styles.npcChipBoss]}>
+                    <Text style={styles.npcChipIcon}>{badge.icon}</Text>
+                    <Text style={[styles.npcChipTxt, isBoss && styles.npcChipBossTxt]}>
+                      {badge.label}
+                    </Text>
+                  </View>
+                );
+              })}
             </View>
           </View>
 
           <View style={styles.introStarRow}>
             <Text style={styles.introStarTxt}>⭐  Your Stars:  1200</Text>
-            <Text style={styles.introRewardTxt}>Max Reward: +10</Text>
+            <Text style={styles.introRewardTxt}>Max Reward: +{LESSON.maxReward}</Text>
           </View>
 
           <TouchableOpacity style={styles.orangeBtn} activeOpacity={0.8} onPress={goNext}>
@@ -140,11 +133,11 @@ export default function Game({ onNavigate }) {
   }
 
   // ── Clear (หลังผ่านด่านสุดท้าย) ────────────────────────────────────────────
-  if (step > ENCOUNTERS.length) {
+  if (step > STEPS.length) {
     return (
       <SafeAreaView style={styles.safe}>
         <ScrollView contentContainerStyle={styles.clearRoot} showsVerticalScrollIndicator={false}>
-          <Text style={styles.clearTitle}>CHAPTER 3 Clear !</Text>
+          <Text style={styles.clearTitle}>{LESSON.chapter} Clear !</Text>
           <Text style={styles.clearParty}>🎉</Text>
 
           <View style={styles.clearBadgeRow}>
@@ -156,12 +149,12 @@ export default function Game({ onNavigate }) {
             </View>
           </View>
 
-          <Text style={styles.clearSubtitle}>PCB Layout & Routing DUNGEON</Text>
+          <Text style={styles.clearSubtitle}>{LESSON.gameTitle}</Text>
 
           <View style={styles.scoreRow}>
             <View style={styles.scoreBox}>
               <Text style={styles.scoreLabel}>ด่านที่ผ่าน</Text>
-              <Text style={[styles.scoreValue, { color: '#4CAF50' }]}>{ENCOUNTERS.length}</Text>
+              <Text style={[styles.scoreValue, { color: '#4CAF50' }]}>{STEPS.length}</Text>
             </View>
             <View style={styles.scoreBox}>
               <Text style={styles.scoreLabel}>Boss Bonus</Text>
@@ -190,18 +183,19 @@ export default function Game({ onNavigate }) {
     );
   }
 
-  // ── เปิด simulation (Tune / Sequence / Select / Diagnose) ──────────────────
+  // ── เปิด challenge (Tune / Sequence / Select / Diagnose / BlockCode) ────────
   if (activeSim) {
-    const enc = ENCOUNTERS[step - 1];
+    const enc = STEPS[step - 1];
     const close = () => setActiveSim(null);
     const win   = () => { setActiveSim(null); goNext(); };
     let sim = null;
     if (activeSim === 'tune')
       sim = <TraceWidthSim current={enc.current} questId={enc.questId}
               npcName={enc.npc} npcEmoji={enc.emoji} onSuccess={win} onClose={close} />;
-    else if (activeSim === 'sequence') sim = <SequenceSim onSuccess={win} onClose={close} />;
-    else if (activeSim === 'select')   sim = <SelectSim   onSuccess={win} onClose={close} />;
-    else if (activeSim === 'diagnose') sim = <DiagnoseSim onSuccess={win} onClose={close} />;
+    else if (activeSim === 'sequence')  sim = <SequenceSim  onSuccess={win} onClose={close} />;
+    else if (activeSim === 'select')    sim = <SelectSim    onSuccess={win} onClose={close} />;
+    else if (activeSim === 'diagnose')  sim = <DiagnoseSim  onSuccess={win} onClose={close} />;
+    else if (activeSim === 'blockcode') sim = <BlockCodeSim level={enc} onSuccess={win} onClose={close} />;
     return <SafeAreaView style={styles.safe}>{sim}</SafeAreaView>;
   }
 
@@ -218,7 +212,7 @@ export default function Game({ onNavigate }) {
   }
 
   // ── ด่านปัจจุบัน: หน้าจอ Battle / Dialogue ─────────────────────────────────
-  const enc = ENCOUNTERS[step - 1];
+  const enc = STEPS[step - 1];
   const multiplier = (1 + (combo - 1) * 0.2).toFixed(1);
 
   return (
@@ -292,6 +286,10 @@ export default function Game({ onNavigate }) {
           ) : enc.kind === 'boss' ? (
             <TouchableOpacity style={styles.acceptBtn} activeOpacity={0.8} onPress={() => setCircuitOpen(true)}>
               <Text style={styles.acceptBtnTxt}>🔌  INTERACT  ▶</Text>
+            </TouchableOpacity>
+          ) : enc.kind === 'blockcode' ? (
+            <TouchableOpacity style={styles.acceptBtn} activeOpacity={0.8} onPress={() => setActiveSim('blockcode')}>
+              <Text style={styles.acceptBtnTxt}>{'</>'}  เขียนโค้ด  ▶</Text>
             </TouchableOpacity>
           ) : (
             <TouchableOpacity style={styles.acceptBtn} activeOpacity={0.8} onPress={() => setActiveSim(enc.sim)}>
@@ -1105,7 +1103,7 @@ const styles = StyleSheet.create({
   chapterTitle: { color: '#d4c9a8', fontSize: 16, fontWeight: '600', textAlign: 'center', lineHeight: 24 },
   introBox: { width: '100%', backgroundColor: '#1c1c30', borderRadius: 12, borderWidth: 1.5, borderColor: '#3a3a5c', padding: 14, gap: 12 },
   introDesc: { color: '#ccc', fontSize: 13, lineHeight: 20, textAlign: 'center' },
-  npcLineup: { flexDirection: 'row', justifyContent: 'center', gap: 8 },
+  npcLineup: { flexDirection: 'row', justifyContent: 'center', flexWrap: 'wrap', gap: 8 },
   npcChip: { alignItems: 'center', backgroundColor: '#2a2a45', borderRadius: 8, padding: 8, minWidth: 48, borderWidth: 1, borderColor: '#4a4a6a' },
   npcChipBoss: { borderColor: '#D94040', backgroundColor: '#3a1a1a' },
   npcChipIcon: { fontSize: 20 },
