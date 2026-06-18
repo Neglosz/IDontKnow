@@ -69,7 +69,7 @@ function useSpriteAnim(frameCount, fps = 8) {
   }, [frameCount, fps]);
   return frame;
 }
-export default function GameHardware() {
+export default function GameHardware({ onNavigate }) {
   const [step, setStep]                   = useState(0);
   const [selectedSensor, setSelected]     = useState(null);
   const [pluggedSensor, setPlugged]       = useState(null);
@@ -148,7 +148,7 @@ export default function GameHardware() {
           <TouchableOpacity style={s.orangeBtn} activeOpacity={0.8} onPress={() => setStep(1)}>
             <Text style={s.orangeBtnTxt}>[ เริ่มเลย !!! ]</Text>
           </TouchableOpacity>
-          <TouchableOpacity activeOpacity={0.6}>
+          <TouchableOpacity activeOpacity={0.6} onPress={() => onNavigate?.('skill-tree')}>
             <Text style={s.backLink}>{'<<'} BACK</Text>
           </TouchableOpacity>
         </View>
@@ -200,7 +200,7 @@ export default function GameHardware() {
           <TouchableOpacity
             style={[s.orangeBtn, { marginTop: 16 }]}
             activeOpacity={0.8}
-            onPress={() => { setStep(0); setStars(1); setCombo(2); }}
+            onPress={() => { setStep(0); setStars(1); setCombo(2); onNavigate?.('skill-tree'); }}
           >
             <Text style={s.orangeBtnTxt}>[ กลับ SKILL TREE {'>>>'} ]</Text>
           </TouchableOpacity>
