@@ -411,7 +411,7 @@ const styles = StyleSheet.create({
     },
     profileTitle: {
         fontFamily: 'PKNonthaburi',
-        fontSize: 15,
+        fontSize: 16,
         fontWeight: '700',
         color: '#8B5FBF',
         marginTop: 2,
@@ -444,18 +444,18 @@ const styles = StyleSheet.create({
     divider: { height: 1.5, backgroundColor: '#EDE4D2' },
     rowLabel: {
         fontFamily: 'PKNonthaburi',
-        fontSize: 17,
+        fontSize: 18,
         color: '#2C1810',
     },
     rowSub: {
-        fontFamily: 'PKNonthaburi',
-        fontSize: 14,
+        fontFamily: 'Jersey',
+        fontSize: 16,
         color: '#9A8A72',
         marginTop: 3,
     },
     logoutText: {
         fontFamily: 'PKNonthaburi',
-        fontSize: 17,
+        fontSize: 18,
         fontWeight: '700',
         color: '#E04A5A',
     },
@@ -519,14 +519,14 @@ const styles = StyleSheet.create({
 
     fieldLabel: {
         fontFamily: 'PKNonthaburi',
-        fontSize: 15,
+        fontSize: 18,
         color: '#452817',
         marginBottom: 6,
         marginTop: 4,
     },
     hintText: {
         fontFamily: 'PKNonthaburi',
-        fontSize: 13,
+        fontSize: 16,
         color: '#9A8A72',
         marginTop: 4,
         marginBottom: 8,
@@ -546,14 +546,14 @@ const styles = StyleSheet.create({
     input: {
         flex: 1,
         fontFamily: 'PKNonthaburi',
-        fontSize: 16,
+        fontSize: 18,
         color: '#2C1810',
         paddingVertical: 0,
     },
     disabledText: {
         flex: 1,
         fontFamily: 'PKNonthaburi',
-        fontSize: 16,
+        fontSize: 18,
         color: '#8A7B64',
     },
 
@@ -576,7 +576,7 @@ const styles = StyleSheet.create({
     modalActionText: {
         flex: 1,
         fontFamily: 'PKNonthaburi',
-        fontSize: 17,
+        fontSize: 18,
         color: '#452817',
     },
 
@@ -591,14 +591,14 @@ const styles = StyleSheet.create({
     btnSave: { backgroundColor: '#4CC764' },
     btnSaveText: {
         fontFamily: 'PKNonthaburi',
-        fontSize: 17,
+        fontSize: 18,
         fontWeight: '700',
         color: '#FFFFFF',
     },
     btnCancel: { backgroundColor: '#E8556A' },
     btnCancelText: {
         fontFamily: 'PKNonthaburi',
-        fontSize: 17,
+        fontSize: 18,
         fontWeight: '700',
         color: '#FFFFFF',
     },
@@ -606,7 +606,7 @@ const styles = StyleSheet.create({
     btnMuted: { backgroundColor: '#DDD2BC' },
     btnMutedText: {
         fontFamily: 'PKNonthaburi',
-        fontSize: 17,
+        fontSize: 18,
         fontWeight: '700',
         color: '#8A7B64',
     },
@@ -623,19 +623,19 @@ const styles = StyleSheet.create({
     warnHeaderRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 6 },
     warnTitle: {
         fontFamily: 'PKNonthaburi',
-        fontSize: 17,
+        fontSize: 18,
         fontWeight: '700',
         color: '#E04A5A',
     },
     warnText: {
         fontFamily: 'PKNonthaburi',
-        fontSize: 15,
+        fontSize: 18,
         color: '#452817',
         lineHeight: 22,
     },
     warnBullet: {
         fontFamily: 'PKNonthaburi',
-        fontSize: 15,
+        fontSize: 18,
         color: '#452817',
         marginLeft: 12,
         lineHeight: 24,

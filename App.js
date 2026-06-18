@@ -39,7 +39,7 @@ const NAV_ACTIVE = {
 };
 
 function AppScreens() {
-  const { user, isNewUser, clearNewUser } = useAuth();
+  const { user, isNewUser, clearNewUser, loading } = useAuth();
   const [screen, setScreen] = useState('scan');
   const [navParams, setNavParams] = useState(null);
 
@@ -47,6 +47,11 @@ function AppScreens() {
     setNavParams(params ?? null);
     setScreen(next);
   };
+
+  // ระหว่างกู้ session ตอนเปิดแอป — กันไม่ให้กระพริบหน้า SignIn
+  if (loading) {
+    return <View style={{ flex: 1, backgroundColor: '#F7F1E5' }} />;
+  }
 
   if (!user) {
     if (screen === 'signup')          return <SignUpScreen onNavigate={setScreen} />;

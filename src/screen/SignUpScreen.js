@@ -23,7 +23,7 @@ export default function SignUpScreen({ onNavigate }) {
   const [showCPw, setShowCPw]       = useState(false);
   const [loading, setLoading]       = useState(false);
 
-  const handleSignUp = () => {
+  const handleSignUp = async () => {
     if (!name || !email || !password || !confirmPw) {
       Alert.alert('แจ้งเตือน', 'กรุณากรอกข้อมูลให้ครบ');
       return;
@@ -37,10 +37,18 @@ export default function SignUpScreen({ onNavigate }) {
       return;
     }
     setLoading(true);
-    const result = signUp(name, email, password);
+    const result = await signUp(name, email, password);
     setLoading(false);
     if (result.error) {
       Alert.alert('สมัครสมาชิกไม่สำเร็จ', result.error);
+      return;
+    }
+    if (result.needsConfirmation) {
+      Alert.alert(
+        'ยืนยันอีเมล',
+        'เราส่งลิงก์ยืนยันไปที่อีเมลของคุณแล้ว กรุณายืนยันก่อนเข้าสู่ระบบ',
+        [{ text: 'ตกลง', onPress: () => onNavigate?.('signin') }]
+      );
     }
   };
 

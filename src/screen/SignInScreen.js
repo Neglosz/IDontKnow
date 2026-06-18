@@ -26,7 +26,7 @@ export default function SignInScreen({ onNavigate }) {
       return;
     }
     setLoading(true);
-    const result = signIn(email, password);
+    const result = await signIn(email, password);
     setLoading(false);
     if (result.error) {
       Alert.alert('เข้าสู่ระบบไม่สำเร็จ', result.error);

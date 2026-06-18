@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity,
-  Image, StyleSheet,
+  Image, StyleSheet, Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -40,9 +40,13 @@ export default function CreateCharacterScreen({ onBack, onDone }) {
   const displayName = name.trim() || DEFAULT_NAME;
   const hasName = name.trim().length > 0;
 
-  const handleCreate = () => {
+  const handleCreate = async () => {
     if (!hasName || success) return;
-    setCharacterName(name.trim());
+    const result = await setCharacterName(name.trim());
+    if (result?.error) {
+      Alert.alert('บันทึกไม่สำเร็จ', result.error);
+      return;
+    }
     setSuccess(true);
     setTimeout(() => onDone(), 1000);
   };
