@@ -1,12 +1,21 @@
 // ============================================================================
-// แหล่งข้อมูลบทเรียน "ชุดเดียว" ของเกมทั้งหมด
+// แหล่งข้อมูลบทเรียน "ชุดเดียว" ของเกมทั้งหมด  (โมเดล: knowledge DAG)
 // ----------------------------------------------------------------------------
-// เพิ่มบทเรียนใหม่ = เพิ่ม object ที่ไฟล์นี้ที่เดียว ไม่ต้องแตะโค้ดเกม
+// เพิ่มบทเรียนใหม่ = เพิ่ม object ใน nodes[] ของ topic ไม่ต้องแตะโค้ดเกม
+// จำนวน node และจำนวน "tier" ไม่จำกัด — tier คำนวณจากกราฟ (ดู computeTiers)
 //
-// โครงสร้าง 3 ชั้น:
-//   TOPIC (หัวข้อ — ตรงกับแท็บใน SkillTree / popup ใน SelectLens)
-//     └─ nodes (t0..t4 = ปุ่มใน SkillTree)
-//          └─ steps[] (เฉพาะ node ที่เล่นได้ — ด่านในเกม ผสมชนิดได้)
+// โครงสร้าง:
+//   TOPIC (หัวข้อ — แท็บใน SkillTree)
+//     └─ nodes: [ ... ]   ← array อิสระ ลึก/กว้างเท่าไหร่ก็ได้
+//
+// node แต่ละตัว:
+//   id        : string ไม่ซ้ำ (kebab-case)
+//   en, th    : ชื่อสั้นบนปุ่ม | fullTh, desc : ชื่อ/คำอธิบายในแผง
+//   teaches[] : concept ที่ node นี้ "สอน" (เป็นปลายทางของเส้นในกราฟ)
+//   requires[]: concept ที่ "ต้องรู้ก่อน" (เป็น prereq — อ้าง teaches ของ node อื่น)
+//   assumeKnown: true → ถือว่าผู้เล่นรู้แล้วตั้งต้น (seed ของ mastery) ไม่มี steps ก็ได้
+//   pretest   : { q, choices:[...], answer:<index> } ข้อสอบข้าม — ตอบถูก = ข้าม node ได้
+//   steps[]   : บทเรียนเต็ม (เฉพาะ node ที่เล่นได้) — ถ้าไม่มี = ยังไม่เปิด ("เร็ว ๆ นี้")
 //
 // step.kind:
 //   'dialogue'  → ผู้เชี่ยวชาญสอน (กดรับทราบ)
@@ -14,9 +23,9 @@
 //   'blockcode' → ลากบล็อกโค้ด (software)
 //   'boss'      → puzzle:'circuit' (ต่อวงจร)
 //
-// ทุก topic ต้องมี node ครบ 6 ตัว: t0, t1, t2, t3a, t3b, t4
-// (เพราะ SkillTree วาดต้นไม้ตามตำแหน่งคงที่ T0→T1→T2→[T3a,T3b]→T4)
-// ============================================================================
+// status (done/available/locked) ไม่เก็บใน data แล้ว — computeStatus() คำนวณ
+// จาก "mastery ของผู้เล่นแต่ละคน" → นี่คือสิ่งที่ทำให้ skill tree เป็น dynamic
+// และ "ข้ามไปอันที่เหมาะกับเรา" ได้ (frontier = node ที่ prereq ครบแต่ยังไม่รู้)
 
 // ── บล็อกโค้ดสำเร็จรูป (software) — reuse ข้าม node ได้ ──────────────────────
 const BC_DOOR = {
@@ -73,12 +82,9 @@ const BC_SOIL = {
   error:   ['COMPILE ERROR! ลำดับ: อ่าน → เช็ค → ปั๊ม → หน่วงเวลา'],
 };
 
-// ── โครง node ที่ยังไม่เล่นได้ (done/locked) — ไม่มี steps ──────────────────
-const lockedNode = (tier, en, th, fullTh, requiredId) => ({
-  tier, en, th, fullTh, status: 'locked', requiredId,
-});
-const doneNode = (tier, en, th, fullTh, desc) => ({
-  tier, en, th, fullTh, desc, status: 'done',
+// helper สร้าง node ที่ยังไม่เปิด (ไม่มี steps) — มีไว้ให้กราฟครบเส้น
+const stub = (id, en, th, fullTh, desc, teaches, requires) => ({
+  id, en, th, fullTh, desc, teaches, requires,
 });
 
 // ============================================================================
@@ -87,12 +93,25 @@ export const TOPICS = [
   {
     key: 'circuit', th: 'การต่อวงจร',
     quest: 'เรียนรู้ขั้นตอนการต่อวงจรเซนเซอร์',
-    nodes: {
-      t0: doneNode('T0', 'Basic Parts', 'รู้จักอุปกรณ์', 'รู้จักอุปกรณ์พื้นฐาน', 'แยกแยะเซนเซอร์และบอร์ดควบคุม'),
-      t1: doneNode('T1', 'Pin Mapping', 'อ่านขาสัญญาณ', 'อ่านขาสัญญาณ (Pinout)', 'เข้าใจขา VCC / GND / SIG'),
-      t2: {
-        tier: 'T2', en: 'Wiring', th: 'ต่อสายวงจร', status: 'available',
-        fullTh: 'ต่อสายวงจรเซนเซอร์', desc: 'ต่อสายไฟเลี้ยงและสัญญาณให้ถูกขั้ว',
+    nodes: [
+      { id: 'parts', en: 'Basic Parts', th: 'รู้จักอุปกรณ์', fullTh: 'รู้จักอุปกรณ์พื้นฐาน',
+        desc: 'แยกแยะเซนเซอร์และบอร์ดควบคุม',
+        teaches: ['basic_parts'], requires: [], assumeKnown: true,
+        pretest: { q: 'อุปกรณ์ใดทำหน้าที่ "ประมวลผล" ในระบบ IoT?',
+          choices: ['เซนเซอร์', 'ESP32', 'สายไฟ'], answer: 1 } },
+
+      { id: 'pinout', en: 'Pin Mapping', th: 'อ่านขาสัญญาณ', fullTh: 'อ่านขาสัญญาณ (Pinout)',
+        desc: 'เข้าใจขา VCC / GND / SIG',
+        teaches: ['pin_mapping'], requires: ['basic_parts'], assumeKnown: true,
+        pretest: { q: 'ขาใดคือ "ไฟเลี้ยง" ของเซนเซอร์?',
+          choices: ['GND', 'SIG', 'VCC'], answer: 2 } },
+
+      { id: 'wiring',
+        en: 'Wiring', th: 'ต่อสายวงจร', fullTh: 'ต่อสายวงจรเซนเซอร์',
+        desc: 'ต่อสายไฟเลี้ยงและสัญญาณให้ถูกขั้ว',
+        teaches: ['wiring'], requires: ['pin_mapping'],
+        pretest: { q: 'ต่อ VCC สลับกับ GND จะเกิดอะไร?',
+          choices: ['ทำงานปกติ', 'ลัดวงจร อุปกรณ์ไหม้', 'อ่านค่าช้าลง'], answer: 1 },
         chapter: 'CHAPTER 1', gameTitle: 'Sensor Wiring DUNGEON',
         intro: 'Hippo ต้องต่อสายเซนเซอร์ให้ถูกก่อนผ่านประตู ระวังต่อกลับขั้วไฟ!',
         maxReward: 8,
@@ -105,22 +124,35 @@ export const TOPICS = [
             text: 'ต่อวงจรเซนเซอร์ให้ถูกต้องสิ ไม่งั้นประตูไม่เปิดหรอก!' },
         ],
       },
-      t3a: lockedNode('T3', 'Multi Sensor', 'หลายเซนเซอร์', 'ต่อหลายเซนเซอร์พร้อมกัน', 't2'),
-      t3b: lockedNode('T3', 'Noise Filter', 'กรองสัญญาณรบกวน', 'จัดการสัญญาณรบกวน', 't2'),
-      t4: lockedNode('T4', 'Full Rig', 'ต่อระบบเต็ม', 'ต่อระบบครบวงจร', 't2'),
-    },
+
+      stub('multi', 'Multi Sensor', 'หลายเซนเซอร์', 'ต่อหลายเซนเซอร์พร้อมกัน',
+        'จัดการหลายเซนเซอร์บนบอร์ดเดียว', ['multi_sensor'], ['wiring']),
+      stub('noise', 'Noise Filter', 'กรองสัญญาณ', 'จัดการสัญญาณรบกวน',
+        'ลด noise ในสายสัญญาณ', ['noise_filter'], ['wiring']),
+      stub('rig', 'Full Rig', 'ต่อระบบเต็ม', 'ต่อระบบครบวงจร',
+        'ประกอบระบบจริงครบชุด', ['full_rig'], ['multi_sensor', 'noise_filter']),
+    ],
   },
 
-  // ── 2) ออกแบบบอร์ด (ดึง hardware dungeon เดิม + แทรก blockcode โชว์การผสม) ──
+  // ── 2) ออกแบบบอร์ด ────────────────────────────────────────────────────────
   {
     key: 'board', th: 'ออกแบบบอร์ด',
     quest: 'เรียนรู้ขั้นตอนการออกแบบบอร์ด',
-    nodes: {
-      t0: doneNode('T0', 'Basic Design', 'พื้นฐานการออกแบบ', 'พื้นฐานการออกแบบ', 'ทำความเข้าใจหลักการออกแบบวงจรเบื้องต้น'),
-      t1: doneNode('T1', 'Circuit Reading', 'อ่านวงจรไฟฟ้า', 'อ่านวงจรไฟฟ้า', 'อ่านและตีความสัญลักษณ์ในแผนผังวงจร'),
-      t2: {
-        tier: 'T2', en: 'PCB Layout', th: 'ออกแบบ PCB', status: 'available',
-        fullTh: 'ออกแบบแผ่นวงจร PCB', desc: 'การแปลงพิมพ์เขียวให้กลายเป็นลายวงจรพิมพ์',
+    nodes: [
+      { id: 'design', en: 'Basic Design', th: 'พื้นฐานออกแบบ', fullTh: 'พื้นฐานการออกแบบ',
+        desc: 'ทำความเข้าใจหลักการออกแบบวงจรเบื้องต้น',
+        teaches: ['design_principle'], requires: [], assumeKnown: true },
+
+      { id: 'schematic', en: 'Circuit Reading', th: 'อ่านวงจร', fullTh: 'อ่านวงจรไฟฟ้า',
+        desc: 'อ่านและตีความสัญลักษณ์ในแผนผังวงจร',
+        teaches: ['schematic'], requires: ['design_principle'], assumeKnown: true },
+
+      { id: 'pcb',
+        en: 'PCB Layout', th: 'ออกแบบ PCB', fullTh: 'ออกแบบแผ่นวงจร PCB',
+        desc: 'การแปลงพิมพ์เขียวให้กลายเป็นลายวงจรพิมพ์',
+        teaches: ['pcb_layout', 'trace_width'], requires: ['schematic'],
+        pretest: { q: 'กระแสมากขึ้น เส้นทองแดงควรเป็นอย่างไร?',
+          choices: ['แคบลง', 'กว้างขึ้น', 'เท่าเดิม'], answer: 1 },
         chapter: 'CHAPTER 3', gameTitle: 'PCB Layout & Routing DUNGEON',
         intro: 'Hippo จะได้พบผู้เชี่ยวชาญและเหล่ามอนสเตอร์ เพื่อเรียนรู้ก่อนเผชิญหน้ากับ Boss Monster.....',
         maxReward: 10,
@@ -137,7 +169,6 @@ export const TOPICS = [
             text: 'จะทำบอร์ดต้องทำตามลำดับ! เรียงขั้นตอนการผลิต PCB ให้ถูกต้อง' },
           { kind: 'sim', sim: 'select', npc: 'Bat', emoji: '🦇',
             text: 'เลือกตัวแปลงไฟที่เหมาะกับโจทย์ที่สุด — ผิดแล้วบอร์ดร้อนนะ!' },
-          // ↓↓↓ ด่าน software แทรกในบทเดียวกัน — โชว์ว่าเอนจินเดียวเล่นได้ทั้งคู่
           BC_DOOR,
           { kind: 'sim', sim: 'diagnose', npc: 'Ghost', emoji: '👻',
             text: 'เซนเซอร์ไม่ทำงาน! วัดแต่ละขาแล้วหาให้เจอว่าพังตรงไหน' },
@@ -145,22 +176,35 @@ export const TOPICS = [
             text: 'กี่! ต่อวงจรเซนเซอร์ให้ถูกต้องสิ ไม่งั้นประตูไม่เปิดหรอก!' },
         ],
       },
-      t3a: lockedNode('T3', 'Power Management', 'ระบบจ่ายไฟ', 'ระบบจ่ายไฟ', 't2'),
-      t3b: lockedNode('T3', 'Signal Integrity', 'การวัดกระแส', 'การวัดกระแส', 't2'),
-      t4: lockedNode('T4', 'Advanced Design', 'ออกแบบขั้นสูง', 'ออกแบบขั้นสูง', 't2'),
-    },
+
+      stub('power', 'Power Management', 'ระบบจ่ายไฟ', 'ระบบจ่ายไฟ',
+        'ออกแบบการจ่ายไฟบนบอร์ด', ['power_mgmt'], ['pcb_layout']),
+      stub('signal', 'Signal Integrity', 'การวัดกระแส', 'การวัดกระแส',
+        'รักษาคุณภาพสัญญาณบนบอร์ด', ['signal_integrity'], ['pcb_layout']),
+      stub('adv-design', 'Advanced Design', 'ออกแบบขั้นสูง', 'ออกแบบขั้นสูง',
+        'ออกแบบบอร์ดซับซ้อน', ['adv_design'], ['power_mgmt', 'signal_integrity']),
+    ],
   },
 
-  // ── 3) เขียนโค้ดคุม (ดึง software LEVELS เดิมมาเป็นด่าน blockcode ล้วน) ──────
+  // ── 3) เขียนโค้ดคุม ───────────────────────────────────────────────────────
   {
     key: 'code', th: 'เขียนโค้ดคุม',
     quest: 'เรียนรู้การเขียนโค้ดควบคุม ESP32',
-    nodes: {
-      t0: doneNode('T0', 'Variables', 'ตัวแปร', 'รู้จักตัวแปร', 'เก็บค่าจากเซนเซอร์ลงตัวแปร'),
-      t1: doneNode('T1', 'Conditions', 'เงื่อนไข', 'การใช้เงื่อนไข if', 'สั่งงานตามเงื่อนไขที่กำหนด'),
-      t2: {
-        tier: 'T2', en: 'Sensor Logic', th: 'ลอจิกเซนเซอร์', status: 'available',
-        fullTh: 'เขียนลอจิกควบคุมเซนเซอร์', desc: 'อ่านค่า → ตรวจเงื่อนไข → สั่งงาน',
+    nodes: [
+      { id: 'vars', en: 'Variables', th: 'ตัวแปร', fullTh: 'รู้จักตัวแปร',
+        desc: 'เก็บค่าจากเซนเซอร์ลงตัวแปร',
+        teaches: ['variables'], requires: [], assumeKnown: true },
+
+      { id: 'cond', en: 'Conditions', th: 'เงื่อนไข', fullTh: 'การใช้เงื่อนไข if',
+        desc: 'สั่งงานตามเงื่อนไขที่กำหนด',
+        teaches: ['conditions'], requires: ['variables'], assumeKnown: true },
+
+      { id: 'sensor-logic',
+        en: 'Sensor Logic', th: 'ลอจิกเซนเซอร์', fullTh: 'เขียนลอจิกควบคุมเซนเซอร์',
+        desc: 'อ่านค่า → ตรวจเงื่อนไข → สั่งงาน',
+        teaches: ['sensor_logic'], requires: ['conditions'],
+        pretest: { q: 'ลำดับที่ถูกต้องของลอจิกควบคุมคือ?',
+          choices: ['สั่งงาน → อ่านค่า → เช็ค', 'อ่านค่า → เช็คเงื่อนไข → สั่งงาน', 'เช็ค → สั่งงาน → อ่านค่า'], answer: 1 },
         chapter: 'CHAPTER 4', gameTitle: 'Block Coding Forge DUNGEON',
         intro: 'ช่างกลเวทมนตร์ต้องเขียนโปรแกรมให้ ESP32 ลากบล็อกคำสั่งมาเรียงให้ถูก ก่อนเจอ Orc Compiler.....',
         maxReward: 14,
@@ -172,21 +216,31 @@ export const TOPICS = [
           BC_SOIL,
         ],
       },
-      t3a: lockedNode('T3', 'Loops', 'การวนซ้ำ', 'การใช้ลูป (loop)', 't2'),
-      t3b: lockedNode('T3', 'Functions', 'ฟังก์ชัน', 'แยกโค้ดเป็นฟังก์ชัน', 't2'),
-      t4: lockedNode('T4', 'State Machine', 'ระบบสถานะ', 'ออกแบบ State Machine', 't2'),
-    },
+
+      stub('loops', 'Loops', 'การวนซ้ำ', 'การใช้ลูป (loop)',
+        'ทำงานซ้ำด้วยลูป', ['loops'], ['sensor_logic']),
+      stub('funcs', 'Functions', 'ฟังก์ชัน', 'แยกโค้ดเป็นฟังก์ชัน',
+        'จัดระเบียบโค้ดด้วยฟังก์ชัน', ['functions'], ['sensor_logic']),
+      stub('fsm', 'State Machine', 'ระบบสถานะ', 'ออกแบบ State Machine',
+        'จัดการสถานะของระบบ', ['state_machine'], ['loops', 'functions']),
+    ],
   },
 
   // ── 4) เชื่อมต่อระบบ ──────────────────────────────────────────────────────
   {
     key: 'integration', th: 'เชื่อมต่อระบบ',
     quest: 'เรียนรู้การเชื่อมต่อระบบ IoT',
-    nodes: {
-      t0: doneNode('T0', 'WiFi Basic', 'พื้นฐาน WiFi', 'เชื่อมต่อ WiFi', 'พา ESP32 เข้าเครือข่าย'),
-      t1: {
-        tier: 'T1', en: 'Cloud Send', th: 'ส่งขึ้นคลาวด์', status: 'available',
-        fullTh: 'ส่งข้อมูลขึ้นคลาวด์', desc: 'รวม hardware + software ในบทเดียว',
+    nodes: [
+      { id: 'wifi', en: 'WiFi Basic', th: 'พื้นฐาน WiFi', fullTh: 'เชื่อมต่อ WiFi',
+        desc: 'พา ESP32 เข้าเครือข่าย',
+        teaches: ['wifi'], requires: [], assumeKnown: true },
+
+      { id: 'cloud',
+        en: 'Cloud Send', th: 'ส่งขึ้นคลาวด์', fullTh: 'ส่งข้อมูลขึ้นคลาวด์',
+        desc: 'รวม hardware + software ในบทเดียว',
+        teaches: ['cloud_send'], requires: ['wifi'],
+        pretest: { q: 'ก่อนส่งข้อมูลขึ้นคลาวด์ ต้องทำอะไรก่อน?',
+          choices: ['ต่อ hardware + เชื่อม WiFi ให้ครบ', 'รีบูตบอร์ด', 'ลบโค้ดเก่า'], answer: 0 },
         chapter: 'CHAPTER 5', gameTitle: 'IoT Bridge DUNGEON',
         intro: 'ด่านผสม! ต่อสายให้ครบ แล้วเขียนโค้ดส่งข้อมูลขึ้นคลาวด์',
         maxReward: 12,
@@ -198,19 +252,95 @@ export const TOPICS = [
           BC_FAN,
         ],
       },
-      t2: lockedNode('T2', 'MQTT', 'โปรโตคอล MQTT', 'รับ-ส่งผ่าน MQTT', 't1'),
-      t3a: lockedNode('T3', 'Dashboard', 'แดชบอร์ด', 'แสดงผลบนแดชบอร์ด', 't1'),
-      t3b: lockedNode('T3', 'Mobile App', 'ควบคุมผ่านแอป', 'สั่งงานผ่านแอป', 't1'),
-      t4: lockedNode('T4', 'Full IoT', 'ระบบ IoT เต็ม', 'ระบบ IoT ครบวงจร', 't1'),
-    },
+
+      stub('mqtt', 'MQTT', 'โปรโตคอล MQTT', 'รับ-ส่งผ่าน MQTT',
+        'สื่อสารด้วย MQTT', ['mqtt'], ['cloud_send']),
+      stub('dashboard', 'Dashboard', 'แดชบอร์ด', 'แสดงผลบนแดชบอร์ด',
+        'แสดงข้อมูลบนแดชบอร์ด', ['dashboard'], ['mqtt']),
+      stub('mobile', 'Mobile App', 'ควบคุมผ่านแอป', 'สั่งงานผ่านแอป',
+        'สั่งงานจากมือถือ', ['mobile_app'], ['mqtt']),
+      stub('full-iot', 'Full IoT', 'ระบบ IoT เต็ม', 'ระบบ IoT ครบวงจร',
+        'ประกอบระบบ IoT ครบวงจร', ['full_iot'], ['dashboard', 'mobile_app']),
+    ],
   },
 ];
 
-// node เริ่มต้นที่ถูกเลือกในแต่ละ topic (ตัวที่ available ตัวแรก, ไม่งั้น t2)
-export function defaultNodeId(topic) {
-  const found = Object.keys(topic.nodes).find(id => topic.nodes[id].status === 'available');
-  return found ?? 't2';
+// ============================================================================
+//  HELPERS — ทำให้ skill tree เป็น dynamic (tier/status คำนวณจากกราฟ + ผู้เล่น)
+// ============================================================================
+
+// map: concept → id ของ node ที่สอน concept นั้น
+function teacherIndex(nodes) {
+  const idx = {};
+  nodes.forEach(n => (n.teaches || []).forEach(c => { idx[c] = n.id; }));
+  return idx;
+}
+
+// ความลึกของ node ในกราฟ = longest path ตาม requires (กันลูปไว้ด้วย)
+function depthMap(nodes) {
+  const byId = Object.fromEntries(nodes.map(n => [n.id, n]));
+  const tIdx = teacherIndex(nodes);
+  const cache = {};
+  const depth = (node, seen = new Set()) => {
+    if (cache[node.id] != null) return cache[node.id];
+    if (seen.has(node.id)) return 0;           // cycle guard
+    seen.add(node.id);
+    const reqNodes = (node.requires || [])
+      .map(c => byId[tIdx[c]]).filter(Boolean);
+    const d = reqNodes.length ? 1 + Math.max(...reqNodes.map(r => depth(r, seen))) : 0;
+    cache[node.id] = d;
+    return d;
+  };
+  const out = {};
+  nodes.forEach(n => { out[n.id] = depth(n); });
+  return out;
+}
+
+// จัด node เป็นชั้น ๆ ตามความลึก → [[ชั้น0], [ชั้น1], ...]  (= "tier" ที่ได้มาจากกราฟ)
+export function computeTiers(nodes) {
+  const dm = depthMap(nodes);
+  const maxD = Math.max(0, ...nodes.map(n => dm[n.id]));
+  const tiers = [];
+  for (let i = 0; i <= maxD; i++) tiers.push(nodes.filter(n => dm[n.id] === i));
+  return tiers;
+}
+
+// mastery ตั้งต้น = concept ของ node ที่ assumeKnown (ภายหลังต่อ pretest/Supabase ได้)
+export function seedMastery(nodes) {
+  const m = new Set();
+  nodes.forEach(n => { if (n.assumeKnown) (n.teaches || []).forEach(c => m.add(c)); });
+  return m;
+}
+
+// status ต่อผู้เล่น:
+//   done      = รู้ teaches ของ node นี้ครบแล้ว (ข้ามได้)
+//   available = prereq ครบแต่ยังไม่รู้ → frontier ที่ควรเล่น
+//   locked    = prereq ยังไม่ครบ
+export function computeStatus(nodes, mastery = new Set()) {
+  const status = {};
+  nodes.forEach(n => {
+    const teaches = n.teaches || [];
+    const requires = n.requires || [];
+    const known = teaches.length > 0 && teaches.every(c => mastery.has(c));
+    const ready = requires.every(c => mastery.has(c));
+    status[n.id] = known ? 'done' : ready ? 'available' : 'locked';
+  });
+  return status;
+}
+
+// node แรกที่ "ควรเริ่ม" = available ตัวแรก (ไม่งั้น node แรกในชุด)
+export function firstAvailableId(nodes, mastery = new Set()) {
+  const status = computeStatus(nodes, mastery);
+  return (nodes.find(n => status[n.id] === 'available') ?? nodes[0])?.id;
+}
+
+// หา node prereq ที่ยังขาด (ใช้บอกผู้เล่นว่า "ต้องผ่านอันไหนก่อน")
+export function missingPrereqNode(node, nodes, mastery = new Set()) {
+  if (!node) return null;
+  const tIdx = teacherIndex(nodes);
+  const missing = (node.requires || []).find(c => !mastery.has(c));
+  return missing ? nodes.find(n => n.id === tIdx[missing]) : null;
 }
 
 // ใช้เป็น fallback เผื่อเข้าเกมโดยไม่ได้ส่ง lesson มา
-export const FALLBACK_LESSON = TOPICS[1].nodes.t2;
+export const FALLBACK_LESSON = TOPICS[1].nodes.find(n => n.id === 'pcb');

@@ -1,15 +1,18 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
     View,
     Text,
     TouchableOpacity,
     Image,
     StyleSheet,
+    Animated,
+    Pressable,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Svg, { Rect, Circle } from 'react-native-svg';
 import { LinearGradient } from 'expo-linear-gradient';
 import Ionicons from '@expo/vector-icons/Ionicons';
+import { CameraView, useCameraPermissions } from 'expo-camera';
 
 const hippoSrc = require('../../assets/hippo.png');
 const catSrc = require('../../assets/player_cat-sheet_120.png');
@@ -76,6 +79,98 @@ function ViewfinderBrackets() {
         </>
     );
 }
+function ScanCamera() {
+    const [permission, requestPermission] = useCameraPermissions();
+    const [cameraOn, setCameraOn] = useState(false);
+    const [autofocus, setAutofocus] = useState('on');
+    const [focusPoint, setFocusPoint] = useState(null);
+
+    const ringScale = useRef(new Animated.Value(1)).current;
+    const ringOpacity = useRef(new Animated.Value(0)).current;
+    const refocusTimer = useRef(null);
+    const hideTimer = useRef(null);
+
+    useEffect(() => {
+        return () => {
+            clearTimeout(refocusTimer.current);
+            clearTimeout(hideTimer.current);
+        };
+    }, []);
+
+    const toggleCamera = async () => {
+        if (!cameraOn) {
+            if (!permission?.granted) {
+                const res = await requestPermission();
+                if (!res.granted) return;
+            }
+            setCameraOn(true);
+        } else {
+            setCameraOn(false);
+        }
+    };
+
+    // แตะเพื่อโฟกัส: ขยับวงโฟกัสไปจุดที่แตะ แล้วสั่งโฟกัสใหม่
+    const handleFocus = (e) => {
+        const { locationX, locationY } = e.nativeEvent;
+        setFocusPoint({ x: locationX, y: locationY });
+
+        // กระตุ้นออโต้โฟกัสใหม่ด้วยการสลับค่า
+        setAutofocus('off');
+        clearTimeout(refocusTimer.current);
+        refocusTimer.current = setTimeout(() => setAutofocus('on'), 60);
+
+        // อนิเมชันวงโฟกัส
+        ringScale.setValue(1.5);
+        ringOpacity.setValue(1);
+        Animated.parallel([
+            Animated.timing(ringScale, { toValue: 1, duration: 250, useNativeDriver: true }),
+        ]).start();
+
+        clearTimeout(hideTimer.current);
+        hideTimer.current = setTimeout(() => {
+            Animated.timing(ringOpacity, { toValue: 0, duration: 250, useNativeDriver: true }).start();
+        }, 700);
+    };
+
+    return (
+        <View style={styles.cameraRoot}>
+            {cameraOn ? (
+                <Pressable style={styles.cameraWrap} onPress={handleFocus}>
+                    <CameraView
+                        style={StyleSheet.absoluteFill}
+                        facing="back"
+                        autofocus={autofocus}
+                    />
+                    {focusPoint && (
+                        <Animated.View
+                            pointerEvents="none"
+                            style={[
+                                styles.focusRing,
+                                {
+                                    left: focusPoint.x - 36,
+                                    top: focusPoint.y - 36,
+                                    opacity: ringOpacity,
+                                    transform: [{ scale: ringScale }],
+                                },
+                            ]}
+                        />
+                    )}
+                    <TouchableOpacity style={styles.camToggleBtn} onPress={toggleCamera} activeOpacity={0.85}>
+                        <Ionicons name="power" size={20} color="#fff" />
+                    </TouchableOpacity>
+                </Pressable>
+            ) : (
+                <TouchableOpacity style={styles.vfCenter} activeOpacity={0.8} onPress={toggleCamera}>
+                    <ViewfinderBrackets />
+                    <Ionicons name="camera-outline" size={72} color="#6E441B" />
+                    <Text style={styles.vfMainText}>แตะเพื่อเปิดกล้อง</Text>
+                    <Text style={styles.vfSubText}>เปิดกล้องเพื่อเริ่มสแกนสิ่งของรอบตัว</Text>
+                </TouchableOpacity>
+            )}
+        </View>
+    );
+}
+
 function ChatMessage({ side, name, avatar, children }) {
     const right = side === 'right';
     return (
@@ -121,13 +216,7 @@ export default function ScanScreen({ onNavigate }) {
                 {/* ส่วนกลาง — flex ยืด/หดตามจอ (ไม่มี scroll) */}
                 <View style={styles.content}>
                     <View style={styles.viewfinder}>
-                        <ViewfinderBrackets />
-
-                        <View style={styles.vfCenter}>
-                            <Ionicons name="camera-outline" size={72} color="#6E441B" />
-                            <Text style={styles.vfMainText}>รูปภาพที่คุณถ่ายไว้</Text>
-                            <Text style={styles.vfSubText}>แอร์คอนดิชั่น  เชียงใหม่</Text>
-                        </View>
+                        <ScanCamera />
 
                         <Text style={styles.vfHint}>เช่น อุปกรณ์ไฟฟ้า  สิ่งของ  หรือสถานที่</Text>
                     </View>
@@ -243,12 +332,14 @@ const styles = StyleSheet.create({
         borderWidth: 5,
         borderColor: '#452817',
         borderRadius: 10,
-        padding: 20,
         flex: 1,
         minHeight: 200,
-        justifyContent: 'space-between',
         position: 'relative',
+        overflow: 'hidden',
         marginBottom: 20,
+    },
+    cameraRoot: {
+        flex: 1,
     },
     vfCenter: {
         flex: 1,
@@ -256,6 +347,33 @@ const styles = StyleSheet.create({
         justifyContent: 'center',
         paddingVertical: 24,
         gap: 10,
+    },
+    cameraWrap: {
+        flex: 1,
+        alignSelf: 'stretch',
+        backgroundColor: '#000',
+        position: 'relative',
+    },
+    focusRing: {
+        position: 'absolute',
+        width: 72,
+        height: 72,
+        borderRadius: 36,
+        borderWidth: 2.5,
+        borderColor: '#FFE08A',
+    },
+    camToggleBtn: {
+        position: 'absolute',
+        top: 10,
+        right: 10,
+        width: 38,
+        height: 38,
+        borderRadius: 19,
+        backgroundColor: 'rgba(0,0,0,0.55)',
+        alignItems: 'center',
+        justifyContent: 'center',
+        borderWidth: 1.5,
+        borderColor: 'rgba(255,255,255,0.6)',
     },
     vfMainText: {
         fontFamily: 'PKNonthaburi',
@@ -270,11 +388,18 @@ const styles = StyleSheet.create({
         opacity:0.6
     },
     vfHint: {
+        position: 'absolute',
+        bottom: 12,
+        alignSelf: 'center',
         fontFamily: 'PKNonthaburi',
         textAlign: 'center',
-        fontSize: 16,
-        color: "#2C1810",
-        opacity:0.5
+        fontSize: 15,
+        color: '#F7F1E5',
+        backgroundColor: 'rgba(44,24,16,0.55)',
+        paddingHorizontal: 12,
+        paddingVertical: 4,
+        borderRadius: 12,
+        overflow: 'hidden',
     },
 
     dialog: {

@@ -5,7 +5,10 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { LinearGradient } from 'expo-linear-gradient';
-import { TOPICS, defaultNodeId } from '../data/lessons';
+import {
+    TOPICS, computeTiers, computeStatus, seedMastery,
+    firstAvailableId, missingPrereqNode,
+} from '../data/lessons';
 
 const hippoSrc = require('../../assets/hippo.png');
 
@@ -29,13 +32,13 @@ function SpriteFrame({ source, frameWidth, frameHeight, totalFrames, fps = 8 }) 
         </View>
     );
 }
-function SkillNode({ id, node, selected, onPress }) {
+function SkillNode({ id, node, status, selected, onPress }) {
     const n = node;
     const map = {
         done: { col: '#7E9B57', icon: 'checkmark-circle-outline', txt: '#4A2800' },
         available: { col: '#C8972F', icon: 'star-outline', txt: '#4A2800' },
         locked: { col: '#B0A492', icon: 'lock-closed', txt: '#8B7E6A' },
-    }[n.status];
+    }[status];
 
     return (
         <TouchableOpacity
@@ -77,19 +80,28 @@ export default function SkillTreeScreen({ onNavigate }) {
 
     const topic = TOPICS.find(t => t.th === activeTab) ?? TOPICS[0];
     const NODES = topic.nodes;
-    const DEFAULT_SELECTED = defaultNodeId(topic);
+
+    // mastery ต่อผู้เล่น — ตอนนี้ seed จาก assumeKnown (ภายหลังต่อ pretest/Supabase ได้)
+    // เมื่อ mastery เปลี่ยน → tier/status คำนวณใหม่อัตโนมัติ = dynamic skill tree
+    const [mastery] = useState(() => seedMastery(NODES));
+    const status = computeStatus(NODES, mastery);
+    const tiers = computeTiers(NODES);
+    const byId = Object.fromEntries(NODES.map(n => [n.id, n]));
+    const DEFAULT_SELECTED = firstAvailableId(NODES, mastery);
 
     const [selectedId, setSelectedId] = useState(DEFAULT_SELECTED);
 
-    // เปลี่ยนแท็บ → เด้งไปเลือก node เริ่มต้นของหัวข้อนั้น
+    // เปลี่ยนแท็บ → เด้งไปเลือก node เริ่มต้น (frontier) ของหัวข้อนั้น
     const switchTab = (tab) => {
         const t = TOPICS.find(x => x.th === tab) ?? TOPICS[0];
         setActiveTab(tab);
-        setSelectedId(defaultNodeId(t));
+        setSelectedId(firstAvailableId(t.nodes, seedMastery(t.nodes)));
     };
 
-    const selected = NODES[selectedId];
-    const isLocked = selected.status === 'locked';
+    const selected = byId[selectedId] ?? NODES[0];
+    const selectedStatus = status[selected.id];
+    const isLocked = selectedStatus === 'locked';
+    const reqNode = missingPrereqNode(selected, NODES, mastery);
 
     const fade = useRef(new Animated.Value(1)).current;
     useEffect(() => {
@@ -98,7 +110,7 @@ export default function SkillTreeScreen({ onNavigate }) {
     }, [selectedId, fade]);
 
     const closePopup = () => setSelectedId(DEFAULT_SELECTED);
-    const goRequired = () => setSelectedId(selected.requiredId ?? DEFAULT_SELECTED);
+    const goRequired = () => setSelectedId(reqNode?.id ?? DEFAULT_SELECTED);
 
     const startLesson = () => {
         if (selected.steps?.length) onNavigate?.('game-hardware', { lesson: selected });
@@ -136,17 +148,23 @@ export default function SkillTreeScreen({ onNavigate }) {
                         {topic.quest}
                     </Text>
 
-                    <View style={styles.progressRow}>
-                        <View style={styles.progressBar}>
-                            {[0, 1, 2, 3, 4, 5].map(i => (
-                                <View
-                                    key={i}
-                                    style={[styles.segment, i < 2 ? styles.segmentOn : styles.segmentOff]}
-                                />
-                            ))}
-                        </View>
-                        <Text style={styles.progressNum}>2/6</Text>
-                    </View>
+                    {(() => {
+                        const total = NODES.length;
+                        const doneCount = NODES.filter(n => status[n.id] === 'done').length;
+                        return (
+                            <View style={styles.progressRow}>
+                                <View style={styles.progressBar}>
+                                    {NODES.map((n, i) => (
+                                        <View
+                                            key={n.id}
+                                            style={[styles.segment, i < doneCount ? styles.segmentOn : styles.segmentOff]}
+                                        />
+                                    ))}
+                                </View>
+                                <Text style={styles.progressNum}>{doneCount}/{total}</Text>
+                            </View>
+                        );
+                    })()}
                 </View>
 
                 <ScrollView
@@ -154,40 +172,25 @@ export default function SkillTreeScreen({ onNavigate }) {
                     contentContainerStyle={styles.treeContent}
                     showsVerticalScrollIndicator={false}
                 >
-                    <TierRow label="T0">
-                        <SkillNode id="t0" node={NODES.t0} selected={selectedId === 't0'} onPress={setSelectedId} />
-                    </TierRow>
-                    <VLine color={'#7E9B57'} height={26} />
-
-                    <TierRow label="T1">
-                        <SkillNode id="t1" node={NODES.t1} selected={selectedId === 't1'} onPress={setSelectedId} />
-                    </TierRow>
-                    <VLine color={'#C8972F'} height={26} />
-
-                    <TierRow label="T2">
-                        <SkillNode id="t2" node={NODES.t2} selected={selectedId === 't2'} onPress={setSelectedId} />
-                    </TierRow>
-
-                    <View style={styles.branchWrap}>
-                        <VLine color={'#B7AC98'} height={14} />
-                        <View style={styles.branchDown} />
-                    </View>
-
-                    <TierRow label="T3">
-                        <View style={styles.t3row}>
-                            <SkillNode id="t3a" node={NODES.t3a} selected={selectedId === 't3a'} onPress={setSelectedId} />
-                            <SkillNode id="t3b" node={NODES.t3b} selected={selectedId === 't3b'} onPress={setSelectedId} />
-                        </View>
-                    </TierRow>
-
-                    <View style={styles.branchWrap}>
-                        <View style={styles.branchUp} />
-                        <VLine color={'#B7AC98'} height={14} />
-                    </View>
-
-                    <TierRow label="T4">
-                        <SkillNode id="t4" node={NODES.t4} selected={selectedId === 't4'} onPress={setSelectedId} />
-                    </TierRow>
+                    {tiers.map((row, ti) => (
+                        <React.Fragment key={ti}>
+                            {ti > 0 && <VLine color={'#B7AC98'} height={22} />}
+                            <TierRow label={`T${ti}`}>
+                                <View style={styles.tierNodes}>
+                                    {row.map(n => (
+                                        <SkillNode
+                                            key={n.id}
+                                            id={n.id}
+                                            node={n}
+                                            status={status[n.id]}
+                                            selected={selectedId === n.id}
+                                            onPress={setSelectedId}
+                                        />
+                                    ))}
+                                </View>
+                            </TierRow>
+                        </React.Fragment>
+                    ))}
                 </ScrollView>
 
                 <Animated.View style={[styles.panel, { opacity: fade }]}>
@@ -207,7 +210,7 @@ export default function SkillTreeScreen({ onNavigate }) {
                                         lineBreakStrategyIOS="standard"
                                     >
                                         อึ๋ย! ด่านนี้ยังเรียนไม่ได้นะ ต้องผ่านด่าน
-                                        ‘{NODES[selected.requiredId]?.fullTh}’ ก่อนนะ!
+                                        ‘{reqNode?.fullTh}’ ก่อนนะ!
                                     </Text>
 
                                     <View style={styles.pipoBtnRow}>
@@ -224,11 +227,11 @@ export default function SkillTreeScreen({ onNavigate }) {
                     ) : (
                         <>
                             <View style={styles.infoCard}>
-                                <View style={[styles.infoIcon, { borderColor: selected.status === 'done' ? '#7E9B57' : '#C8972F' }]}>
+                                <View style={[styles.infoIcon, { borderColor: selectedStatus === 'done' ? '#7E9B57' : '#C8972F' }]}>
                                     <Ionicons
-                                        name={selected.status === 'done' ? 'checkmark-circle-outline' : 'star-outline'}
+                                        name={selectedStatus === 'done' ? 'checkmark-circle-outline' : 'star-outline'}
                                         size={24}
-                                        color={selected.status === 'done' ? '#7E9B57' : '#C8972F'}
+                                        color={selectedStatus === 'done' ? '#7E9B57' : '#C8972F'}
                                     />
                                 </View>
                                 <View style={styles.infoTextWrap}>
@@ -258,7 +261,7 @@ export default function SkillTreeScreen({ onNavigate }) {
                                 <Text style={[styles.ctaText, !selected.steps?.length && styles.ctaTextDone]}>
                                     {selected.steps?.length
                                         ? 'เริ่มเรียนรู้ ➤'
-                                        : selected.status === 'done' ? 'ผ่านแล้ว ✓' : 'เร็ว ๆ นี้'}
+                                        : selectedStatus === 'done' ? 'ผ่านแล้ว ✓' : 'เร็ว ๆ นี้'}
                                 </Text>
                             </TouchableOpacity>
                         </>
@@ -321,6 +324,7 @@ const styles = StyleSheet.create({
     tierDivider: { flex: 1, height: 1.5, backgroundColor: '#B7AC98', opacity: 0.6 },
 
     t3row: { flexDirection: 'row', justifyContent: 'center', gap: T3_GAP },
+    tierNodes: { flexDirection: 'row', justifyContent: 'center', flexWrap: 'wrap', gap: T3_GAP },
 
     node: {
         width: NODE, height: NODE,

@@ -118,7 +118,7 @@ export default function HistoryMap({ onNavigate }) {
     };
 
     if (detail) {
-        return <LearningDetail detail={detail} onBack={() => setDetail(null)} />;
+        return <LearningDetail detail={detail} onBack={() => setDetail(null)} onNavigate={onNavigate} />;
     }
 
     const provinceList = HISTORY_ORDER
@@ -140,6 +140,21 @@ export default function HistoryMap({ onNavigate }) {
                     </Text>
                 </View>
 
+                <View style={styles.progressWrap}>
+                    <View style={styles.progressTrack}>
+                        <View style={[styles.progressFill, { width: `${Math.max(4, (visitedCount / 77) * 100)}%` }]}>
+                            <LinearGradient
+                                colors={['#F8CE84', '#EC9F37']}
+                                start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}
+                                style={StyleSheet.absoluteFill}
+                            />
+                        </View>
+                    </View>
+                    <Text style={styles.progressCaption}>
+                        ✨ เก็บความทรงจำไปแล้ว {visitedCount} จังหวัด · อีก {77 - visitedCount} จังหวัดรอสำรวจ!
+                    </Text>
+                </View>
+
                 <View style={styles.tabBar}>
                     <TabButton icon="location-outline" label="แผนที่" active={tab === 'map'} onPress={() => setTab('map')} />
                     <TabButton icon="trophy-outline" label="อันดับ" active={tab === 'rank'} onPress={() => setTab('rank')} />
@@ -151,6 +166,7 @@ export default function HistoryMap({ onNavigate }) {
                         onProvincePress={openProvince}
                         provinceList={provinceList}
                         onLockChange={setMapLocked}
+                        onNavigate={onNavigate}
                     />
                 ) : (
                     <RankTab />
@@ -173,7 +189,7 @@ function TabButton({ icon, label, active, onPress }) {
 }
 
 /* ---------------------- ZOOMABLE MAP (GH + Reanimated, viewBox-based) ---------------------- */
-function MapTab({ selectedProvince, onProvincePress, provinceList, onLockChange }) {
+function MapTab({ selectedProvince, onProvincePress, provinceList, onLockChange, onNavigate }) {
     const scale = useSharedValue(1);
     const tx = useSharedValue(0);
     const ty = useSharedValue(0);
@@ -257,8 +273,9 @@ function MapTab({ selectedProvince, onProvincePress, provinceList, onLockChange 
     };
 
     const thr = TIER_THRESHOLD[tier];
+    // จังหวัดที่มีหมุดรูป (visited) จะโชว์ชื่อใต้หมุดเองอยู่แล้ว → ไม่ต้องมีป้ายลอยซ้ำ (กันทับ)
     const labelled = PROVINCES.filter(p =>
-        hasData(p.th) || selectedProvince?.th === p.th || p.area >= thr
+        !hasData(p.th) && (selectedProvince?.th === p.th || p.area >= thr)
     );
     const markers = useMemo(() => PROVINCES.filter(p => hasData(p.th)), []);
 
@@ -331,16 +348,34 @@ function MapTab({ selectedProvince, onProvincePress, provinceList, onLockChange 
 
                         {/* overlay: markers + labels (เลื่อนตามแผนที่ แต่คงขนาดเสมอ) */}
                         <View style={StyleSheet.absoluteFill} pointerEvents="box-none">
-                            {markers.map(p => (
-                                <Projected key={'mk' + p.code} svgX={p.cx} svgY={p.cy} w={40} h={40}
-                                    scale={scale} tx={tx} ty={ty}>
-                                    <TouchableOpacity activeOpacity={0.85} onPress={() => onProvincePress(p)} style={styles.markerInner}>
-                                        {PROVINCE_LEARNINGS[p.th][0].image
-                                            ? <Image source={PROVINCE_LEARNINGS[p.th][0].image} style={styles.markerImg} />
-                                            : <View style={styles.markerPlaceholder}><Ionicons name="cube-outline" size={18} color="#7C6A4E" /></View>}
-                                    </TouchableOpacity>
-                                </Projected>
-                            ))}
+                            {markers.map(p => {
+                                const items = PROVINCE_LEARNINGS[p.th];
+                                // anchor = ก้นกล่องอยู่ที่ centroid (yOffset = -h/2) + เนื้อหา flex-end
+                                // → ปลายแหลมของหาง = จุดศูนย์กลางจังหวัดพอดีทุกระดับซูม
+                                return (
+                                    <Projected key={'mk' + p.code} svgX={p.cx} svgY={p.cy} w={70} h={64} yOffset={-32}
+                                        scale={scale} tx={tx} ty={ty}>
+                                        <TouchableOpacity activeOpacity={0.85} onPress={() => onProvincePress(p)} style={styles.pin}>
+                                            <View style={styles.pinCard}>
+                                                {items[0].image
+                                                    ? <Image source={items[0].image} style={styles.pinImg} />
+                                                    : <View style={styles.pinPlaceholder}><Ionicons name="cube" size={24} color="#E59A3C" /></View>}
+                                                {items.length > 1 && (
+                                                    <View style={styles.pinBadge}>
+                                                        <Text style={styles.pinBadgeText}>{items.length}</Text>
+                                                    </View>
+                                                )}
+                                            </View>
+                                            <View style={styles.pinTail} />
+                                            <View style={styles.pinLabel} pointerEvents="none">
+                                                <View style={styles.pinLabelPill}>
+                                                    <Text style={styles.pinLabelText} numberOfLines={1}>{shortName(p.th)}</Text>
+                                                </View>
+                                            </View>
+                                        </TouchableOpacity>
+                                    </Projected>
+                                );
+                            })}
 
                             {labelled.map(p => {
                                 const dataP = hasData(p.th);
@@ -360,10 +395,6 @@ function MapTab({ selectedProvince, onProvincePress, provinceList, onLockChange 
                             })}
                         </View>
 
-                        <View style={styles.mapHint} pointerEvents="none">
-                            <Ionicons name="scan-outline" size={13} color="#6E5436" />
-                            <Text style={styles.mapHintText}>ถ่างนิ้วเพื่อซูม • แตะจังหวัดเพื่อดู</Text>
-                        </View>
                         {zoomed && (
                             <TouchableOpacity style={styles.resetBtn} onPress={reset} activeOpacity={0.85}>
                                 <Ionicons name="contract-outline" size={20} color="#6B4A2B" />
@@ -373,22 +404,39 @@ function MapTab({ selectedProvince, onProvincePress, provinceList, onLockChange 
                 </GestureDetector>
             </View>
 
-            <View style={styles.legendCard}>
-                <Text style={styles.legendHint}>กดที่จังหวัดเพื่อดูรายละเอียด</Text>
+            <View style={styles.mapInfoCard}>
+                <View style={styles.mapHintBelow}>
+                    <Ionicons name="scan-outline" size={14} color="#9A8569" />
+                    <Text style={styles.mapHintBelowText}>ถ่างนิ้วเพื่อซูม · แตะจังหวัดเพื่อดูรายละเอียด</Text>
+                </View>
+                <View style={styles.mapInfoDivider} />
                 <View style={styles.legendRow}>
                     <View style={styles.legendItem}>
                         <View style={[styles.legendSwatch, { backgroundColor: '#2F6B3A' }]} />
-                        <Text style={styles.legendText}>มีรายการ</Text>
+                        <Text style={styles.legendText}>เคยไปสแกน</Text>
                     </View>
                     <View style={styles.legendItem}>
                         <View style={[styles.legendSwatch, { backgroundColor: '#8FAE80' }]} />
-                        <Text style={styles.legendText}>ไม่มีรายการ</Text>
+                        <Text style={styles.legendText}>ยังไม่ไป</Text>
                     </View>
                 </View>
             </View>
 
             <Text style={styles.sectionTitle}>ประวัติ</Text>
-            {provinceList.map(({ th, count }) => (
+            {provinceList.length === 0 ? (
+                <View style={styles.emptyMap}>
+                    <Text style={styles.emptyMapHippo}>🦛</Text>
+                    <Text style={styles.emptyMapTitle}>ยังไม่มีความทรงจำบนแผนที่</Text>
+                    <Text style={styles.emptyMapHint}>
+                        ออกไปสแกนสิ่งของรอบตัว แล้วรูปของมันจะมาปักหมุดบนแผนที่นี้เอง!
+                    </Text>
+                    <TouchableOpacity style={styles.emptyMapBtn} activeOpacity={0.9} onPress={() => onNavigate?.('scan')}>
+                        <LinearGradient colors={['#D99A3F', '#C07C26']} start={{ x: 0, y: 0 }} end={{ x: 0, y: 1 }} style={styles.emptyMapBtnGrad}>
+                            <Text style={styles.emptyMapBtnText}>ออกไปสแกน ▸</Text>
+                        </LinearGradient>
+                    </TouchableOpacity>
+                </View>
+            ) : provinceList.map(({ th, count }) => (
                 <TouchableOpacity key={th} style={styles.historyRow} activeOpacity={0.85}
                     onPress={() => onProvincePress(PROVINCES.find(p => p.th === th))}>
                     <View style={styles.historyPin}><Ionicons name="location" size={22} color="#A9794A" /></View>
@@ -481,32 +529,28 @@ function ProvinceSheet({ province, onClose, onOpenLearning }) {
                         </TouchableOpacity>
                     </View>
 
-                    <View style={styles.sheetBody}>
+                    <ScrollView style={styles.sheetBody} contentContainerStyle={styles.sheetBodyContent} showsVerticalScrollIndicator={false}>
                         <Text style={styles.sheetCount}>{learnings.length}</Text>
-                        <Text style={styles.sheetCountLabel}>การเรียนรู้ทั้งหมด</Text>
+                        <Text style={styles.sheetCountLabel}>สิ่งที่เคยสแกนที่นี่</Text>
 
                         {learnings.length > 0 ? (
-                            <>
-                                <Text style={styles.sheetListLabel}>สิ่งที่เรียนรู้</Text>
+                            <View style={styles.photoGrid}>
                                 {learnings.map(item => (
-                                    <TouchableOpacity key={item.id} style={styles.learnRow} activeOpacity={0.85}
+                                    <TouchableOpacity key={item.id} style={styles.photoCell} activeOpacity={0.85}
                                         onPress={() => onOpenLearning(item, province.th)}>
-                                        <View style={styles.learnThumb}>
+                                        <View style={styles.photoCellImg}>
                                             {item.image
-                                                ? <Image source={item.image} style={styles.learnThumbImg} />
-                                                : <Ionicons name="image-outline" size={22} color="#9A8B72" />}
+                                                ? <Image source={item.image} style={styles.photoCellImgInner} />
+                                                : <View style={styles.photoCellPh}><Ionicons name="image-outline" size={28} color="#B7AC98" /></View>}
                                         </View>
-                                        <View style={{ flex: 1 }}>
-                                            <Text style={styles.learnTitle}>{item.title}</Text>
-                                            <View style={styles.learnDateRow}>
-                                                <Ionicons name="time-outline" size={14} color="#A9794A" />
-                                                <Text style={styles.learnDate}>{item.date}</Text>
-                                            </View>
+                                        <Text style={styles.photoCellTitle} numberOfLines={1}>{item.title}</Text>
+                                        <View style={styles.photoCellDateRow}>
+                                            <Ionicons name="time-outline" size={12} color="#A9794A" />
+                                            <Text style={styles.photoCellDate}>{item.date}</Text>
                                         </View>
-                                        <Ionicons name="chevron-forward" size={22} color="#A9794A" />
                                     </TouchableOpacity>
                                 ))}
-                            </>
+                            </View>
                         ) : (
                             <View style={styles.emptyBox}>
                                 <Ionicons name="sparkles-outline" size={28} color="#B7AC98" />
@@ -514,7 +558,7 @@ function ProvinceSheet({ province, onClose, onOpenLearning }) {
                                 <Text style={styles.emptyHint}>ไปสแกนสิ่งของเพื่อปลดล็อกความรู้กัน!</Text>
                             </View>
                         )}
-                    </View>
+                    </ScrollView>
                 </Pressable>
             </Pressable>
         </Modal>
@@ -522,8 +566,13 @@ function ProvinceSheet({ province, onClose, onOpenLearning }) {
 }
 
 /* ============================ DETAIL ============================ */
-function LearningDetail({ detail, onBack }) {
+function LearningDetail({ detail, onBack, onNavigate }) {
     const { item, province } = detail;
+    // ปุ่มหลักพาไปทำต่อจริง: "สร้างการเรียนรู้" → ไปสแกน, "เรียนรู้อีกครั้ง" → ไป skill tree
+    const handleCta = () => {
+        const dest = item.cta?.includes('สร้าง') ? 'scan' : 'skill-tree';
+        onNavigate?.(dest);
+    };
     return (
         <SafeAreaView style={styles.safe} edges={['top']}>
             <ScrollView style={styles.body} contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
@@ -571,7 +620,7 @@ function LearningDetail({ detail, onBack }) {
                     </View>
                 </View>
 
-                <TouchableOpacity activeOpacity={0.9} onPress={onBack}>
+                <TouchableOpacity activeOpacity={0.9} onPress={handleCta}>
                     <LinearGradient colors={['#D99A3F', '#C07C26']} start={{ x: 0, y: 0 }} end={{ x: 0, y: 1 }} style={styles.ctaBtn}>
                         <Text style={styles.ctaText}>{item.cta} ▸</Text>
                     </LinearGradient>
@@ -589,7 +638,7 @@ const styles = StyleSheet.create({
 
     header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end', paddingTop: 10, paddingBottom: 14 },
     title: { fontFamily: 'Jersey', fontSize: 28, fontWeight: '900', color: '#C47A30', letterSpacing: 1 },
-    countLabel: { fontFamily: 'PKNonthaburi', fontSize: 15, color: '#B98A3E' },
+    countLabel: { fontFamily: 'PKNonthaburi', fontSize: 18, color: '#B98A3E' },
     countNum: { fontFamily: 'Jersey', fontSize: 18, fontWeight: '900', color: '#C99A3E' },
 
     tabBar: { flexDirection: 'row', backgroundColor: '#FCF8EF', borderWidth: 2, borderColor: '#D8CBB5', borderRadius: 14, padding: 5, gap: 5, marginBottom: 16 },
@@ -609,19 +658,78 @@ const styles = StyleSheet.create({
     markerImg: { width: '100%', height: '100%', borderRadius: 9 },
     markerPlaceholder: { width: '100%', height: '100%', borderRadius: 9, backgroundColor: '#EDE3D0', alignItems: 'center', justifyContent: 'center' },
 
+    // ===== หมุดการ์ดรูป (เรียบ สะอาด + ปลายแหลมตรง centroid) =====
+    pin: { width: 70, height: 64, alignItems: 'center', justifyContent: 'flex-end' },
+    pinCard: {
+        width: 48, height: 48, borderRadius: 14, backgroundColor: '#FFFFFF',
+        borderWidth: 3, borderColor: '#FFFFFF', overflow: 'hidden',
+        alignItems: 'center', justifyContent: 'center',
+        shadowColor: '#23323D', shadowOpacity: 0.22, shadowRadius: 4, shadowOffset: { width: 0, height: 2 }, elevation: 5,
+    },
+    pinImg: { width: '100%', height: '100%', borderRadius: 11 },
+    pinPlaceholder: { width: '100%', height: '100%', borderRadius: 11, backgroundColor: '#FCEFD6', alignItems: 'center', justifyContent: 'center' },
+    pinBadge: {
+        position: 'absolute', top: -6, right: -6, minWidth: 19, height: 19, paddingHorizontal: 4,
+        borderRadius: 10, backgroundColor: '#FF8A3D', borderWidth: 2, borderColor: '#FFFFFF',
+        alignItems: 'center', justifyContent: 'center',
+    },
+    pinBadgeText: { fontFamily: 'Jersey', fontSize: 12, fontWeight: '900', color: '#FFFFFF' },
+    pinTail: {
+        width: 0, height: 0, marginTop: -2,
+        borderLeftWidth: 7, borderRightWidth: 7, borderTopWidth: 10,
+        borderLeftColor: 'transparent', borderRightColor: 'transparent', borderTopColor: '#FFFFFF',
+    },
+    // ชื่อจังหวัดติดใต้หมุด (absolute → ไม่กระทบตำแหน่งปลายแหลม, ขยับตามหมุดเสมอ)
+    pinLabel: { position: 'absolute', top: 64, left: -30, right: -30, alignItems: 'center' },
+    pinLabelPill: {
+        backgroundColor: '#FFFFFF', borderRadius: 9, paddingHorizontal: 8, paddingVertical: 2,
+        borderWidth: 1, borderColor: '#E2D6BE',
+        shadowColor: '#23323D', shadowOpacity: 0.18, shadowRadius: 2, shadowOffset: { width: 0, height: 1 }, elevation: 3,
+    },
+    pinLabelText: { fontFamily: 'PKNonthaburi', fontSize: 13, fontWeight: '700', color: '#2C5A33' },
+
+    // ===== Progress bar (X/77) =====
+    progressWrap: { marginBottom: 16, marginTop: -4 },
+    progressTrack: { height: 14, borderRadius: 7, backgroundColor: '#EADFC9', borderWidth: 1.5, borderColor: '#DECFB2', overflow: 'hidden' },
+    progressFill: { height: '100%', borderRadius: 7, overflow: 'hidden' },
+    progressCaption: { fontFamily: 'PKNonthaburi', fontSize: 14, color: '#9A8569', marginTop: 6 },
+
+    // ===== Empty state (ยังไม่เคยสแกน) =====
+    emptyMap: { alignItems: 'center', backgroundColor: '#FCF8EF', borderWidth: 2, borderColor: '#E4DAC6', borderRadius: 16, paddingVertical: 26, paddingHorizontal: 22, gap: 8 },
+    emptyMapHippo: { fontSize: 52 },
+    emptyMapTitle: { fontFamily: 'PKNonthaburi', fontSize: 20, fontWeight: '700', color: '#6E441B' },
+    emptyMapHint: { fontFamily: 'PKNonthaburi', fontSize: 15, color: '#9A8569', textAlign: 'center', lineHeight: 22 },
+    emptyMapBtn: { marginTop: 8, borderRadius: 14, overflow: 'hidden', borderWidth: 2, borderColor: '#A9691C' },
+    emptyMapBtnGrad: { paddingVertical: 12, paddingHorizontal: 28 },
+    emptyMapBtnText: { fontFamily: 'PKNonthaburi', fontSize: 18, fontWeight: '700', color: '#FFFFFF' },
+
+    // ===== Photo grid ใน sheet =====
+    photoGrid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between' },
+    photoCell: { width: '48%', marginBottom: 14 },
+    photoCellImg: { width: '100%', aspectRatio: 1, borderRadius: 14, overflow: 'hidden', backgroundColor: '#F0E8D8', borderWidth: 1.5, borderColor: '#EAE0CD' },
+    photoCellImgInner: { width: '100%', height: '100%' },
+    photoCellPh: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+    photoCellTitle: { fontFamily: 'PKNonthaburi', fontSize: 16, fontWeight: '700', color: '#452817', marginTop: 7 },
+    photoCellDateRow: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 1 },
+    photoCellDate: { fontFamily: 'PKNonthaburi', fontSize: 13, color: '#9A8569' },
+
     labelCenter: { width: 120, alignItems: 'center' },
     labelPill: { backgroundColor: 'rgba(252,248,239,0.92)', borderRadius: 7, paddingHorizontal: 7, paddingVertical: 2, borderWidth: 1, borderColor: '#E2D6BE' },
-    labelPillData: { backgroundColor: '#2F6B3A', borderColor: '#235029' },
+    labelPillData: { backgroundColor: '#FFFFFF', borderColor: '#F0D6A8' },
     labelText: { fontFamily: 'PKNonthaburi', fontSize: 12, fontWeight: '700', color: '#3A2817' },
-    labelTextData: { color: '#FFFFFF' },
+    labelTextData: { color: '#D98A2B' },
 
     mapHint: { position: 'absolute', top: 10, left: 10, flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: 'rgba(252,248,239,0.88)', borderRadius: 8, paddingHorizontal: 9, paddingVertical: 5, borderWidth: 1, borderColor: '#E2D6BE' },
     mapHintText: { fontFamily: 'PKNonthaburi', fontSize: 12, color: '#6E5436' },
+    mapInfoCard: { backgroundColor: '#FCF8EF', borderWidth: 2, borderColor: '#D8CBB5', borderRadius: 14, paddingVertical: 10, paddingHorizontal: 12, marginTop: 12, marginBottom: 18 },
+    mapInfoDivider: { height: 1, backgroundColor: '#E8DEC9', marginVertical: 8 },
+    mapHintBelow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6 },
+    mapHintBelowText: { fontFamily: 'PKNonthaburi', fontSize: 13, color: '#9A8569' },
     resetBtn: { position: 'absolute', bottom: 12, right: 12, width: 40, height: 40, borderRadius: 12, backgroundColor: 'rgba(252,248,239,0.95)', borderWidth: 1.5, borderColor: '#D8CBB5', alignItems: 'center', justifyContent: 'center', shadowColor: '#000', shadowOpacity: 0.15, shadowRadius: 3, shadowOffset: { width: 0, height: 1 }, elevation: 3 },
 
     legendCard: { backgroundColor: '#FCF8EF', borderWidth: 2, borderColor: '#D8CBB5', borderRadius: 14, padding: 14, marginBottom: 18 },
     legendHint: { fontFamily: 'PKNonthaburi', fontSize: 16, color: '#452817', marginBottom: 8 },
-    legendRow: { flexDirection: 'row', gap: 24 },
+    legendRow: { flexDirection: 'row', justifyContent: 'center', gap: 24 },
     legendItem: { flexDirection: 'row', alignItems: 'center', gap: 8 },
     legendSwatch: { width: 18, height: 18, borderRadius: 5 },
     legendText: { fontFamily: 'PKNonthaburi', fontSize: 15, color: '#6E441B' },
@@ -640,7 +748,8 @@ const styles = StyleSheet.create({
     sheetHeaderIcon: { width: 48, height: 48, borderRadius: 12, backgroundColor: '#FBF6EC', alignItems: 'center', justifyContent: 'center' },
     sheetTitle: { fontFamily: 'PKNonthaburi', fontSize: 24, fontWeight: '700', color: '#FFFFFF' },
     sheetSub: { fontFamily: 'PKNonthaburi', fontSize: 14, color: '#E9D8C0' },
-    sheetBody: { padding: 18 },
+    sheetBody: { paddingHorizontal: 18 },
+    sheetBodyContent: { paddingTop: 18, paddingBottom: 24 },
     sheetCount: { fontFamily: 'Jersey', fontSize: 44, fontWeight: '900', color: '#7B5733', textAlign: 'center' },
     sheetCountLabel: { fontFamily: 'PKNonthaburi', fontSize: 16, color: '#6E441B', textAlign: 'center', marginBottom: 14 },
     sheetListLabel: { fontFamily: 'PKNonthaburi', fontSize: 17, fontWeight: '700', color: '#452817', marginBottom: 10 },
