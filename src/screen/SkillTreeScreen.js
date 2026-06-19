@@ -6,9 +6,10 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { LinearGradient } from 'expo-linear-gradient';
 import {
-    TOPICS, computeTiers, computeStatus, seedMastery,
+    TOPICS, computeTiers, computeStatus,
     firstAvailableId, missingPrereqNode,
 } from '../data/lessons';
+import { useMastery } from '../data/progress';
 
 const hippoSrc = require('../../assets/hippo.png');
 
@@ -81,9 +82,9 @@ export default function SkillTreeScreen({ onNavigate }) {
     const topic = TOPICS.find(t => t.th === activeTab) ?? TOPICS[0];
     const NODES = topic.nodes;
 
-    // mastery ต่อผู้เล่น — ตอนนี้ seed จาก assumeKnown (ภายหลังต่อ pretest/Supabase ได้)
-    // เมื่อ mastery เปลี่ยน → tier/status คำนวณใหม่อัตโนมัติ = dynamic skill tree
-    const [mastery] = useState(() => seedMastery(NODES));
+    // mastery = concept ที่ผู้เล่น "รู้แล้ว" — มาจาก store กลาง (calibration / เล่นจบ node)
+    // อยู่รอดข้ามหน้าจอ และ re-render เองเมื่อเปลี่ยน → dynamic skill tree
+    const mastery = useMastery();
     const status = computeStatus(NODES, mastery);
     const tiers = computeTiers(NODES);
     const byId = Object.fromEntries(NODES.map(n => [n.id, n]));
@@ -95,7 +96,7 @@ export default function SkillTreeScreen({ onNavigate }) {
     const switchTab = (tab) => {
         const t = TOPICS.find(x => x.th === tab) ?? TOPICS[0];
         setActiveTab(tab);
-        setSelectedId(firstAvailableId(t.nodes, seedMastery(t.nodes)));
+        setSelectedId(firstAvailableId(t.nodes, mastery));
     };
 
     const selected = byId[selectedId] ?? NODES[0];

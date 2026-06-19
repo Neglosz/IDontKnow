@@ -13,9 +13,11 @@
 //   en, th    : ชื่อสั้นบนปุ่ม | fullTh, desc : ชื่อ/คำอธิบายในแผง
 //   teaches[] : concept ที่ node นี้ "สอน" (เป็นปลายทางของเส้นในกราฟ)
 //   requires[]: concept ที่ "ต้องรู้ก่อน" (เป็น prereq — อ้าง teaches ของ node อื่น)
-//   assumeKnown: true → ถือว่าผู้เล่นรู้แล้วตั้งต้น (seed ของ mastery) ไม่มี steps ก็ได้
-//   pretest   : { q, choices:[...], answer:<index> } ข้อสอบข้าม — ตอบถูก = ข้าม node ได้
-//   steps[]   : บทเรียนเต็ม (เฉพาะ node ที่เล่นได้) — ถ้าไม่มี = ยังไม่เปิด ("เร็ว ๆ นี้")
+//   pretest   : { q, choices:[...], answer:<index> } ข้อสอบ calibration — ตอบถูก = ข้าม node ได้
+//   steps[]   : บทเรียนเต็ม — **ทุก node ควรมี** (จะรู้หรือไม่ ค่อยตัดสินด้วย calibration)
+//
+// ❗ ไม่มี assumeKnown แล้ว: data ไม่ตัดสินแทนผู้เล่นว่า "รู้อะไรแล้ว"
+//    การข้ามทำผ่าน calibration ตอน runtime (ดู masteryFromCalibration)
 //
 // step.kind:
 //   'dialogue'  → ผู้เชี่ยวชาญสอน (กดรับทราบ)
@@ -96,15 +98,35 @@ export const TOPICS = [
     nodes: [
       { id: 'parts', en: 'Basic Parts', th: 'รู้จักอุปกรณ์', fullTh: 'รู้จักอุปกรณ์พื้นฐาน',
         desc: 'แยกแยะเซนเซอร์และบอร์ดควบคุม',
-        teaches: ['basic_parts'], requires: [], assumeKnown: true,
+        teaches: ['basic_parts'], requires: [],
         pretest: { q: 'อุปกรณ์ใดทำหน้าที่ "ประมวลผล" ในระบบ IoT?',
-          choices: ['เซนเซอร์', 'ESP32', 'สายไฟ'], answer: 1 } },
+          choices: ['เซนเซอร์', 'ESP32', 'สายไฟ'], answer: 1 },
+        chapter: 'CHAPTER 0', gameTitle: 'Know Your Parts', maxReward: 4,
+        intro: 'รู้จักอุปกรณ์พื้นฐานก่อนลงมือต่อ',
+        steps: [
+          { kind: 'dialogue', npc: 'Professor', emoji: '🧑‍🏫',
+            text: 'ระบบ IoT มีอุปกรณ์หลัก 3 กลุ่ม:\n\n' +
+              '• บอร์ดควบคุม (เช่น ESP32) = สมองที่ประมวลผล\n' +
+              '• เซนเซอร์ = ตัวรับรู้ เช่น วัดอุณหภูมิ / แสง / ความชื้น\n' +
+              '• สายไฟ / เบรดบอร์ด = ทางเชื่อมให้ไฟและสัญญาณวิ่งถึงกัน\n\n' +
+              'แยกสามอย่างนี้ออกให้ได้ก่อน เดี๋ยวต่อวงจรจะไม่งง' },
+        ] },
 
       { id: 'pinout', en: 'Pin Mapping', th: 'อ่านขาสัญญาณ', fullTh: 'อ่านขาสัญญาณ (Pinout)',
         desc: 'เข้าใจขา VCC / GND / SIG',
-        teaches: ['pin_mapping'], requires: ['basic_parts'], assumeKnown: true,
+        teaches: ['pin_mapping'], requires: ['basic_parts'],
         pretest: { q: 'ขาใดคือ "ไฟเลี้ยง" ของเซนเซอร์?',
-          choices: ['GND', 'SIG', 'VCC'], answer: 2 } },
+          choices: ['GND', 'SIG', 'VCC'], answer: 2 },
+        chapter: 'CHAPTER 0', gameTitle: 'Read the Pins', maxReward: 4,
+        intro: 'รู้ว่าขาไหนคืออะไร ก่อนต่อสาย',
+        steps: [
+          { kind: 'dialogue', npc: 'Professor', emoji: '🧑‍🏫',
+            text: 'เซนเซอร์ส่วนใหญ่มี 3 ขาหลัก:\n\n' +
+              '• VCC = รับไฟเลี้ยง\n' +
+              '• GND = ต่อกราวด์ (0V)\n' +
+              '• SIG (บางตัวเขียน OUT/DATA) = ส่งค่าที่วัดได้ออกมา\n\n' +
+              'ดูชื่อขาจากตัวอักษรบนบอร์ดหรือ datasheet อย่าเดา เพราะต่อผิดขาอาจพังได้' },
+        ] },
 
       { id: 'wiring',
         en: 'Wiring', th: 'ต่อสายวงจร', fullTh: 'ต่อสายวงจรเซนเซอร์',
@@ -141,11 +163,33 @@ export const TOPICS = [
     nodes: [
       { id: 'design', en: 'Basic Design', th: 'พื้นฐานออกแบบ', fullTh: 'พื้นฐานการออกแบบ',
         desc: 'ทำความเข้าใจหลักการออกแบบวงจรเบื้องต้น',
-        teaches: ['design_principle'], requires: [], assumeKnown: true },
+        teaches: ['design_principle'], requires: [],
+        pretest: { q: 'ขั้นแรกของการออกแบบวงจรที่ดีคือ?',
+          choices: ['ลงมือต่อสายทันที', 'เข้าใจโจทย์/สิ่งที่ต้องการก่อน', 'สั่งผลิตบอร์ดก่อน'], answer: 1 },
+        chapter: 'CHAPTER 0', gameTitle: 'Design Basics', maxReward: 4,
+        intro: 'หลักคิดก่อนเริ่มออกแบบวงจร',
+        steps: [
+          { kind: 'dialogue', npc: 'Professor', emoji: '🧑‍🏫',
+            text: 'การออกแบบวงจรที่ดีไม่ได้เริ่มที่การต่อสาย แต่เริ่มที่ "เข้าใจโจทย์" ก่อน:\n\n' +
+              '• ระบบนี้ต้องทำอะไร? วัดอะไร สั่งงานอะไร\n' +
+              '• ต้องใช้อุปกรณ์อะไรบ้าง ใช้ไฟเท่าไร\n\n' +
+              'รู้เป้าหมายชัดก่อน แล้วค่อยเลือกอุปกรณ์และวางวงจร จะแก้ทีหลังน้อยลงมาก' },
+        ] },
 
       { id: 'schematic', en: 'Circuit Reading', th: 'อ่านวงจร', fullTh: 'อ่านวงจรไฟฟ้า',
         desc: 'อ่านและตีความสัญลักษณ์ในแผนผังวงจร',
-        teaches: ['schematic'], requires: ['design_principle'], assumeKnown: true },
+        teaches: ['schematic'], requires: ['design_principle'],
+        pretest: { q: 'สัญลักษณ์ในแผนผังวงจร (schematic) มีไว้เพื่อ?',
+          choices: ['ตกแต่งให้สวย', 'แทนอุปกรณ์จริงและการต่อถึงกัน', 'บอกราคาอุปกรณ์'], answer: 1 },
+        chapter: 'CHAPTER 0', gameTitle: 'Read the Schematic', maxReward: 4,
+        intro: 'อ่านพิมพ์เขียวของวงจรให้ออก',
+        steps: [
+          { kind: 'dialogue', npc: 'Professor', emoji: '🧑‍🏫',
+            text: '"แผนผังวงจร" (schematic) คือพิมพ์เขียวที่ใช้สัญลักษณ์แทนอุปกรณ์จริง\n\n' +
+              '• เส้น = สายไฟที่ต่อถึงกัน\n' +
+              '• สัญลักษณ์ = อุปกรณ์ เช่น ตัวต้านทาน แบตเตอรี่ LED\n\n' +
+              'อ่าน schematic ออก = รู้ว่าอะไรต่อกับอะไร ก่อนจะลงมือต่อจริงบนบอร์ด' },
+        ] },
 
       { id: 'pcb',
         en: 'PCB Layout', th: 'ออกแบบ PCB', fullTh: 'ออกแบบแผ่นวงจร PCB',
@@ -193,11 +237,34 @@ export const TOPICS = [
     nodes: [
       { id: 'vars', en: 'Variables', th: 'ตัวแปร', fullTh: 'รู้จักตัวแปร',
         desc: 'เก็บค่าจากเซนเซอร์ลงตัวแปร',
-        teaches: ['variables'], requires: [], assumeKnown: true },
+        teaches: ['variables'], requires: [],
+        pretest: { q: 'ตัวแปร (variable) ในโปรแกรมใช้ทำอะไร?',
+          choices: ['เก็บค่าไว้ใช้งานต่อ', 'ปิดเครื่อง', 'ต่อสายไฟ'], answer: 0 },
+        chapter: 'CHAPTER 0', gameTitle: 'Store the Value', maxReward: 4,
+        intro: 'ที่เก็บค่าระหว่างที่โปรแกรมทำงาน',
+        steps: [
+          { kind: 'dialogue', npc: 'ศาสตราจารย์ฮิปโป', emoji: '🦛',
+            text: '"ตัวแปร" (variable) เหมือนกล่องที่ตั้งชื่อไว้สำหรับเก็บค่า\n\n' +
+              'เช่น อ่านอุณหภูมิจากเซนเซอร์มาได้ ก็เก็บไว้ในตัวแปรชื่อ t:\n' +
+              '   t = readDHT11();\n\n' +
+              'พอเก็บไว้แล้ว เราก็เอา t ไปเช็คเงื่อนไขหรือคำนวณต่อได้เรื่อย ๆ ' +
+              'โดยไม่ต้องอ่านค่าใหม่ทุกครั้ง' },
+        ] },
 
       { id: 'cond', en: 'Conditions', th: 'เงื่อนไข', fullTh: 'การใช้เงื่อนไข if',
         desc: 'สั่งงานตามเงื่อนไขที่กำหนด',
-        teaches: ['conditions'], requires: ['variables'], assumeKnown: true },
+        teaches: ['conditions'], requires: ['variables'],
+        pretest: { q: 'คำสั่ง if ใช้เพื่ออะไร?',
+          choices: ['ทำงานซ้ำตลอดเวลา', 'ทำงานเฉพาะเมื่อเงื่อนไขเป็นจริง', 'เก็บค่าตัวแปร'], answer: 1 },
+        chapter: 'CHAPTER 0', gameTitle: 'Make a Decision', maxReward: 4,
+        intro: 'ให้โปรแกรมตัดสินใจตามเงื่อนไข',
+        steps: [
+          { kind: 'dialogue', npc: 'ศาสตราจารย์ฮิปโป', emoji: '🦛',
+            text: 'คำสั่ง "if" ทำให้โปรแกรมตัดสินใจได้ — สั่งงานเฉพาะเมื่อเงื่อนไขเป็นจริง\n\n' +
+              '   if (t > 35) { fanON(); }\n\n' +
+              'อ่านว่า "ถ้าอุณหภูมิเกิน 35 องศา ให้เปิดพัดลม"\n\n' +
+              'ถ้าเงื่อนไขไม่จริง โปรแกรมก็ข้ามคำสั่งในวงเล็บไป — นี่คือหัวใจของการสั่งงานอัตโนมัติ' },
+        ] },
 
       { id: 'sensor-logic',
         en: 'Sensor Logic', th: 'ลอจิกเซนเซอร์', fullTh: 'เขียนลอจิกควบคุมเซนเซอร์',
@@ -233,7 +300,18 @@ export const TOPICS = [
     nodes: [
       { id: 'wifi', en: 'WiFi Basic', th: 'พื้นฐาน WiFi', fullTh: 'เชื่อมต่อ WiFi',
         desc: 'พา ESP32 เข้าเครือข่าย',
-        teaches: ['wifi'], requires: [], assumeKnown: true },
+        teaches: ['wifi'], requires: [],
+        pretest: { q: 'ESP32 ต่อ WiFi เพื่ออะไร?',
+          choices: ['ให้บอร์ดร้อนขึ้น', 'เข้าเครือข่ายเพื่อรับ-ส่งข้อมูล', 'เพิ่มแรงดันไฟ'], answer: 1 },
+        chapter: 'CHAPTER 0', gameTitle: 'Get Online', maxReward: 4,
+        intro: 'พา ESP32 เข้าอินเทอร์เน็ตก่อนส่งข้อมูล',
+        steps: [
+          { kind: 'dialogue', npc: 'Professor', emoji: '🧑‍🏫',
+            text: 'ESP32 มี WiFi ในตัว ใช้พาบอร์ดเข้าเครือข่ายเพื่อรับ-ส่งข้อมูลกับอินเทอร์เน็ต\n\n' +
+              'แค่บอกชื่อเครือข่าย (SSID) กับรหัสผ่าน:\n' +
+              '   WiFi.begin("ชื่อWiFi", "รหัสผ่าน");\n\n' +
+              'พอเชื่อมสำเร็จ บอร์ดก็ส่งค่าเซนเซอร์ขึ้น server หรือรับคำสั่งจากแอปได้' },
+        ] },
 
       { id: 'cloud',
         en: 'Cloud Send', th: 'ส่งขึ้นคลาวด์', fullTh: 'ส่งข้อมูลขึ้นคลาวด์',
@@ -305,11 +383,12 @@ export function computeTiers(nodes) {
   return tiers;
 }
 
-// mastery ตั้งต้น = concept ของ node ที่ assumeKnown (ภายหลังต่อ pretest/Supabase ได้)
-export function seedMastery(nodes) {
-  const m = new Set();
-  nodes.forEach(n => { if (n.assumeKnown) (n.teaches || []).forEach(c => m.add(c)); });
-  return m;
+// mastery = "concept ที่ผู้เล่นรู้แล้ว" — ตัดสินตอน runtime ไม่ใช่ใน data
+//   • ก่อน calibration → ว่าง (ผู้เล่นเริ่มจาก node ราก ทุก node มีบทเรียนรองรับ)
+//   • หลัง calibration / เล่นจบ node → เติม concept เข้าไป → frontier ขยับ/ข้ามให้เอง
+// แปลงผล calibration (concept ที่ผ่าน pretest) เป็น mastery set
+export function masteryFromCalibration(passedConcepts = []) {
+  return new Set(passedConcepts);
 }
 
 // status ต่อผู้เล่น:

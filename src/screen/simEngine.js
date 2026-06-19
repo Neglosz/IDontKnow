@@ -51,6 +51,28 @@ export function scoreEvidence(packet, parMs = 20000) {
   };
 }
 
+// รวม Quiz Accuracy เป็น % (0–100) จาก packet ของด่านที่เล่นจริง (ไม่นับ calibration)
+export function aggregateQuizAccuracy(packets = Tracker.packets()) {
+  const sims = packets.filter(p => p.archetype !== 'calibrate');
+  if (!sims.length) return null;
+  const sum = sims.reduce((a, p) => a + (scoreEvidence(p).quizAccuracy / 60) * 100, 0);
+  return Math.round(sum / sims.length);
+}
+
+// Level Score รวม 100% ตาม proposal: Calibration 20% + Quiz Accuracy 60% + Consistency 20%
+// แต่ละ input เป็น % (0–100) แล้วถ่วงน้ำหนัก → จัด band ตามหน้า 12
+export function computeLevelScore({ calibrationScore = 0, quizAccuracyPct = 0, consistencyScore = 0 }) {
+  const levelScore = Math.round(
+    calibrationScore * 0.2 + quizAccuracyPct * 0.6 + consistencyScore * 0.2
+  );
+  let band, pace, advice;
+  if (levelScore >= 91)      { band = '91-100'; pace = 'fast';   advice = 'เพิ่มเร็ว เนื้อหาถัดไปท้าทายขึ้น'; }
+  else if (levelScore >= 76) { band = '76-90';  pace = 'normal'; advice = 'ระดับเพิ่มปกติ'; }
+  else if (levelScore >= 60) { band = '60-75';  pace = 'slow';   advice = 'เพิ่มช้าลง เนื้อหาง่ายลง'; }
+  else                       { band = '<60';    pace = 'review'; advice = 'แนะนำให้ทบทวนเนื้อหาเดิม'; }
+  return { levelScore, band, pace, advice };
+}
+
 // แยก "เข้าใจชัด / ลองแล้วเจอ / เดา / เข้าใจผิด" จากพฤติกรรม (ใช้ร่วมทุก archetype)
 function deriveApproach({ firstCorrect, attempts, misconceptions, behavior }) {
   const noise = (behavior.reversals || 0) + (behavior.resets || 0);

@@ -19,9 +19,10 @@ import { Esp32Board, SensorModule, ESP_VB, ESP_PADS, SENSOR_VB, SENSOR_PADS } fr
 import Svg, { Path } from 'react-native-svg';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import TraceWidthSim from './TraceWidthSim';
-import { SequenceSim, SelectSim, DiagnoseSim } from './simEngine';
+import { SequenceSim, SelectSim, DiagnoseSim, computeLevelScore, aggregateQuizAccuracy } from './simEngine';
 import BlockCodeSim from './SoftwareGame';
 import { FALLBACK_LESSON } from '../data/lessons';
+import { Progress } from '../data/progress';
 
 const { width: SW } = Dimensions.get('window');
 
@@ -89,6 +90,14 @@ export default function Game({ onNavigate, lesson }) {
     setStep(s => s + 1);
   };
 
+  // เล่นจบ node (ถึงหน้า Clear) → mark concept ที่บทนี้สอนเป็น mastery
+  // idempotent: ฟังก์ชันกันซ้ำให้แล้ว เรียกหลายครั้งไม่มีผลข้างเคียง
+  useEffect(() => {
+    if (STEPS.length > 0 && step > STEPS.length) {
+      Progress.learn(LESSON.teaches ?? []);
+    }
+  }, [step, STEPS.length]);
+
   // ── Step 0: Intro ────────────────────────────────────────────────────────
   if (step === 0) {
     return (
@@ -134,6 +143,13 @@ export default function Game({ onNavigate, lesson }) {
 
   // ── Clear (หลังผ่านด่านสุดท้าย) ────────────────────────────────────────────
   if (step > STEPS.length) {
+    // Level Score รวม 100% ตาม proposal (Calibration 20 + Quiz 60 + Consistency 20)
+    const quizPct = aggregateQuizAccuracy() ?? 0;
+    const level = computeLevelScore({
+      calibrationScore: Progress.calibration() ?? 0,
+      quizAccuracyPct: quizPct,
+      consistencyScore: Progress.consistencyScore(),
+    });
     return (
       <SafeAreaView style={styles.safe}>
         <ScrollView contentContainerStyle={styles.clearRoot} showsVerticalScrollIndicator={false}>
@@ -169,10 +185,25 @@ export default function Game({ onNavigate, lesson }) {
             </Text>
           </View>
 
+          <View style={styles.scoreRow}>
+            <View style={styles.scoreBox}>
+              <Text style={styles.scoreLabel}>Level Score</Text>
+              <Text style={[styles.scoreValue, { color: '#C97D10' }]}>{level.levelScore}%</Text>
+            </View>
+            <View style={styles.scoreBox}>
+              <Text style={styles.scoreLabel}>Quiz Accuracy</Text>
+              <Text style={[styles.scoreValue, { color: '#3A8FE8' }]}>{quizPct}%</Text>
+            </View>
+          </View>
+
           <View style={styles.clearHintRow}>
-            <Text style={styles.clearHintTxt}>🧑‍🏫  ควรทบทวนเรื่อง "กระแสไฟฟ้า (Current)"</Text>
-            <Text style={styles.clearHintTxt}>       ลองเพิ่มเรื่อง "สูตรคำนวณ Trace Width"</Text>
-            <Text style={styles.clearHintLink}>       🔴 สร้าง Node การเรียนรู้</Text>
+            <Text style={styles.clearHintTxt}>
+              🧑‍🏫  {level.advice}
+              {'\n'}      (Calibration {Progress.calibration() ?? 0}% · Quiz {quizPct}% · Streak {Progress.streakDays()} วัน)
+            </Text>
+            {level.pace === 'review' && (
+              <Text style={styles.clearHintLink}>      🔴 แนะนำสร้าง Node ทบทวนเพิ่ม</Text>
+            )}
           </View>
 
           <TouchableOpacity style={[styles.orangeBtn, { marginTop: 16 }]} activeOpacity={0.8} onPress={() => { setStep(0); onNavigate?.('skill-tree'); }}>

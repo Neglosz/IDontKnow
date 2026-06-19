@@ -119,7 +119,7 @@ export default function KnowledgeScreen({ onNavigate, item, path, topic }) {
                 <TouchableOpacity
                     style={styles.ctaPrimary}
                     activeOpacity={0.85}
-                    onPress={() => onNavigate?.('calibrate')}
+                    onPress={() => onNavigate?.('calibrate', { topic })}
                 >
                     <LinearGradient
                         colors={['#DEA569', '#C47A2D', '#C47A2D', '#854F18']}
