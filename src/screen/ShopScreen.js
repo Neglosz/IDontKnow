@@ -5,6 +5,8 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Ionicons from '@expo/vector-icons/Ionicons';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useAuth } from '../context/AuthContext';
 
 /* ===== assets ===== */
 const starSrc        = require('../../assets/star.png');
@@ -226,13 +228,44 @@ function Toast({ data, onHide }) {
 }
 
 export default function ShopScreen({ onNavigate }) {
-    const [coins, setCoins]       = useState(1200);
+    // ดาว = total_stars จริงใน Supabase (ผ่าน AuthContext) — ซื้อแล้วหักจริง
+    const { user, stars: coins, spendStars } = useAuth();
     const [items, setItems]       = useState(COSTUMES);
     const [equipped, setEquipped] = useState({});   // { slotKey: itemKey }
     const [preview, setPreview]   = useState(null);  // key ของไอเทมที่กำลังลอง/เลือก
     const [filter, setFilter]     = useState('all'); // 'all' | slotKey | 'owned'
     const [toast, setToast]       = useState(null);
     const [presets, setPresets]   = useState([]);    // ชุดที่บันทึกไว้ [{id, equipped}]
+
+    // ── ของที่ครอบครอง/สวมใส่: เก็บใน AsyncStorage (cosmetic — ไม่กระทบ economy) ──
+    // RLS ของ inventory เปิดให้ client "อ่าน" อย่างเดียว จึงเก็บฝั่งเครื่องไว้ก่อน
+    const costumesKey = user ? `@costumes:${user.id}` : null;
+    const hydrated = useRef(false);
+
+    useEffect(() => {
+        if (!costumesKey) return;
+        (async () => {
+            try {
+                const raw = await AsyncStorage.getItem(costumesKey);
+                if (raw) {
+                    const saved = JSON.parse(raw);   // { owned: string[], equipped: {} }
+                    if (Array.isArray(saved.owned)) {
+                        setItems(list => list.map(i =>
+                            saved.owned.includes(i.key) ? { ...i, owned: true } : i));
+                    }
+                    if (saved.equipped) setEquipped(saved.equipped);
+                }
+            } catch {}
+            hydrated.current = true;
+        })();
+    }, [costumesKey]);
+
+    // เซฟทุกครั้งที่ของที่มี/ชุดที่ใส่เปลี่ยน (หลัง hydrate เสร็จ กันทับค่าว่าง)
+    useEffect(() => {
+        if (!costumesKey || !hydrated.current) return;
+        const owned = items.filter(i => i.owned).map(i => i.key);
+        AsyncStorage.setItem(costumesKey, JSON.stringify({ owned, equipped })).catch(() => {});
+    }, [items, equipped, costumesKey]);
 
     const itemByKey = (key) => items.find(i => i.key === key) || null;
     const previewItem = itemByKey(preview);
@@ -274,8 +307,12 @@ export default function ShopScreen({ onNavigate }) {
         else { setFilter(slotKey); setPreview(null); }
     };
 
-    const doBuy = (item) => {
-        setCoins(c => c - item.price);
+    const doBuy = async (item) => {
+        const res = await spendStars(item.price);   // หักดาวจริงใน Supabase
+        if (res?.error) {
+            Alert.alert('ดาวไม่พอ', `ต้องใช้ ${item.price} ดาว แต่คุณมี ${res.balance ?? coins} ดาว`);
+            return;
+        }
         setItems(list => list.map(i => i.key === item.key ? { ...i, owned: true } : i));
         setEquipped(e => ({ ...e, [item.slot]: item.key }));
         setPreview(item.key);

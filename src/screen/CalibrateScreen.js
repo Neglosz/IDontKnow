@@ -7,6 +7,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { TOPICS, computeTiers } from '../data/lessons';
 import { Progress } from '../data/progress';
 import { useSimSession } from './simEngine';
+import { useAuth } from '../context/AuthContext';
 
 // sprite sheet ของ MASTER — ปรับ path / frame ให้ตรงกับไฟล์จริง
 const masterSrc = require('../../assets/boss_talkt_128.png');
@@ -56,6 +57,7 @@ export default function CalibrateScreen({
     topic,                       // เผื่อส่ง object lens/topic มา
     masterIntro = DEFAULT_INTRO,
 }) {
+    const { recordDailyActivity } = useAuth();
     const resolved = TOPICS.find(t => t.key === (topicKey ?? topic?.key)) ?? TOPICS[0];
     const queue = useMemo(() => buildQueue(resolved.nodes), [resolved]);
 
@@ -99,7 +101,8 @@ export default function CalibrateScreen({
     const finish = () => {
         const total = queue.length || 1;
         Progress.setCalibration(Math.round((correctRef.current / total) * 100));
-        Progress.touchStreak();
+        Progress.touchStreak();          // streak ใน session (ใช้คำนวณ level score ทันที)
+        recordDailyActivity();           // นับ streak จริงลง Supabase + cache (วันละครั้ง)
         sess.complete({
             completeness: correctRef.current === total ? 'full'
                 : correctRef.current > 0 ? 'partial' : 'none',

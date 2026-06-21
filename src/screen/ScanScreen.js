@@ -13,6 +13,7 @@ import Svg, { Rect, Circle } from 'react-native-svg';
 import { LinearGradient } from 'expo-linear-gradient';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { CameraView, useCameraPermissions } from 'expo-camera';
+import { useAuth } from '../context/AuthContext';
 
 const hippoSrc = require('../../assets/hippo.png');
 const catSrc = require('../../assets/player_cat-sheet_120.png');
@@ -197,6 +198,7 @@ function ChatMessage({ side, name, avatar, children }) {
 }
 
 export default function ScanScreen({ onNavigate }) {
+    const { stars } = useAuth();
     return (
         <SafeAreaView style={styles.safe} edges={['top']}>
             <View style={styles.body}>
@@ -209,7 +211,7 @@ export default function ScanScreen({ onNavigate }) {
                     </View>
                     <View style={styles.scoreBadge}>
                         <Image source={starSrc} style={{ width: 18, height: 18 }} resizeMode="contain" />
-                        <Text style={styles.scoreNum}>1200</Text>
+                        <Text style={styles.scoreNum}>{stars}</Text>
                     </View>
                 </View>
 

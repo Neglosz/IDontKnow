@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import {
     View, Text, Image, TouchableOpacity, ScrollView, StyleSheet,
-    Modal, TextInput, Switch, Platform,
+    Modal, TextInput, Switch, Platform, Alert
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Ionicons from '@expo/vector-icons/Ionicons';
@@ -111,7 +111,7 @@ function PasswordField({ placeholder, value, onChangeText }) {
 }
 
 export default function SettingScreen({ onNavigate }) {
-    const { signOut } = useAuth();
+    const { signOut, user, characterName, changePassword, deleteAccount } = useAuth();
 
     // toggles (mockup state)
     const [notifDaily, setNotifDaily] = useState(true);
@@ -140,6 +140,35 @@ export default function SettingScreen({ onNavigate }) {
         setShowTime(true);
     };
 
+    // ── Account: เปลี่ยนรหัสผ่าน / ลบบัญชี ──
+    const [pwLoading, setPwLoading] = useState(false);
+    const [delLoading, setDelLoading] = useState(false);
+    const CONFIRM_WORD = 'ลบบัญชีของฉัน';
+
+    const submitPassword = async () => {
+        if (newPw.length < 8) { Alert.alert('รหัสผ่านสั้นไป', 'อย่างน้อย 8 ตัวอักษร'); return; }
+        if (newPw !== confirmPw) { Alert.alert('ไม่ตรงกัน', 'ยืนยันรหัสผ่านใหม่ไม่ตรงกัน'); return; }
+        setPwLoading(true);
+        const res = await changePassword(curPw, newPw);
+        setPwLoading(false);
+        if (res.error) { Alert.alert('เปลี่ยนรหัสผ่านไม่สำเร็จ', res.error); return; }
+        Alert.alert('สำเร็จ', 'เปลี่ยนรหัสผ่านเรียบร้อยแล้ว');
+        setCurPw(''); setNewPw(''); setConfirmPw('');
+        setShowPassword(false);
+    };
+
+    const submitDelete = async () => {
+        if (deleteText.trim() !== CONFIRM_WORD) {
+            Alert.alert('ยืนยันไม่ถูกต้อง', `กรุณาพิมพ์ "${CONFIRM_WORD}" ให้ตรง`);
+            return;
+        }
+        setDelLoading(true);
+        const res = await deleteAccount(deletePw);
+        setDelLoading(false);
+        if (res.error) { Alert.alert('ลบบัญชีไม่สำเร็จ', res.error); return; }
+        // สำเร็จ → deleteAccount เรียก signOut ให้แล้ว จอเด้งกลับ SignIn อัตโนมัติ
+    };
+
     return (
         <SafeAreaView style={styles.safe} edges={['top']}>
             <ScrollView
@@ -161,7 +190,7 @@ export default function SettingScreen({ onNavigate }) {
                         <SpriteFrame source={catSrc} frameWidth={80} frameHeight={80} totalFrames={3} fps={3.5} scale={0.72} />
                     </View>
                     <View style={styles.profileTextCol}>
-                        <Text style={styles.profileName}>{MOCK.name}</Text>
+                        <Text style={styles.profileName}>{characterName || 'ผู้เล่นใหม่'}</Text>
                         <Text style={styles.profileTitle}>{MOCK.title}</Text>
                     </View>
                 </View>
@@ -175,7 +204,7 @@ export default function SettingScreen({ onNavigate }) {
                     <TouchableOpacity style={styles.rowItem} onPress={() => setShowAccount(true)}>
                         <View style={{ flex: 1 }}>
                             <Text style={styles.rowLabel}>อีเมลที่ใช้สมัคร</Text>
-                            <Text style={styles.rowSub}>{MOCK.email}</Text>
+                            <Text style={styles.rowSub}>{user?.email}</Text>
                         </View>
                         <Ionicons name="chevron-forward" size={22} color="#6E441B" />
                     </TouchableOpacity>
@@ -251,7 +280,7 @@ export default function SettingScreen({ onNavigate }) {
                 <Text style={styles.fieldLabel}>อีเมลที่ใช้สมัคร</Text>
                 <View style={[styles.inputWrap, styles.inputDisabled]}>
                     <Ionicons name="mail-outline" size={18} color="#B6A88F" style={{ marginRight: 8 }} />
-                    <Text style={styles.disabledText}>{MOCK.email}</Text>
+                    <Text style={styles.disabledText}>{user?.email}</Text>
                 </View>
                 <Text style={styles.hintText}>ไม่สามารถเปลี่ยนอีเมลได้</Text>
 
@@ -286,8 +315,8 @@ export default function SettingScreen({ onNavigate }) {
                 <PasswordField placeholder="กรอกรหัสผ่านใหม่อีกครั้ง" value={confirmPw} onChangeText={setConfirmPw} />
 
                 <View style={styles.modalBtnRow}>
-                    <TouchableOpacity style={[styles.modalBtn, styles.btnSave]} onPress={() => setShowPassword(false)}>
-                        <Text style={styles.btnSaveText}>บันทึก</Text>
+                    <TouchableOpacity style={[styles.modalBtn, styles.btnSave]} onPress={submitPassword} disabled={pwLoading}>
+                        <Text style={styles.btnSaveText}>{pwLoading ? 'กำลังบันทึก...' : 'บันทึก'}</Text>
                     </TouchableOpacity>
                     <TouchableOpacity style={[styles.modalBtn, styles.btnCancel]} onPress={() => setShowPassword(false)}>
                         <Text style={styles.btnCancelText}>ยกเลิก</Text>
@@ -325,8 +354,8 @@ export default function SettingScreen({ onNavigate }) {
                 <PasswordField placeholder="กรอกรหัสผ่านเพื่อยืนยัน" value={deletePw} onChangeText={setDeletePw} />
 
                 <View style={styles.modalBtnRow}>
-                    <TouchableOpacity style={[styles.modalBtn, styles.btnDanger]} onPress={() => setShowDelete(false)}>
-                        <Text style={styles.btnSaveText}>ลบบัญชี</Text>
+                    <TouchableOpacity style={[styles.modalBtn, styles.btnDanger]} onPress={submitDelete} disabled={delLoading}>
+                        <Text style={styles.btnSaveText}>{delLoading ? 'กำลังลบ...' : 'ลบบัญชี'}</Text>
                     </TouchableOpacity>
                     <TouchableOpacity style={[styles.modalBtn, styles.btnMuted]} onPress={() => setShowDelete(false)}>
                         <Text style={styles.btnMutedText}>ยกเลิก</Text>

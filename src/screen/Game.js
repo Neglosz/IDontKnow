@@ -23,6 +23,7 @@ import { SequenceSim, SelectSim, DiagnoseSim, computeLevelScore, aggregateQuizAc
 import BlockCodeSim from './SoftwareGame';
 import { FALLBACK_LESSON } from '../data/lessons';
 import { Progress } from '../data/progress';
+import { useAuth } from '../context/AuthContext';
 
 const { width: SW } = Dimensions.get('window');
 
@@ -71,6 +72,12 @@ export default function Game({ onNavigate, lesson }) {
   const LESSON = lesson ?? FALLBACK_LESSON;
   const STEPS = LESSON.steps ?? [];
 
+  // totalStars = ดาวรวมจริงของผู้เล่น (คนละตัวกับ stars ด้านล่างที่เป็นตัวนับด่านในเกม)
+  const { stars: totalStars, currentStreak, awardStars, recordDailyActivity } = useAuth();
+  const rewardedRef = useRef(false);
+  // ดาวที่จะได้เมื่อเคลียร์ = จำนวนด่าน + โบนัสบอส (โชว์ในหน้า Clear ด้วย)
+  const earnedStars = STEPS.length + 3;
+
   const [step, setStep] = useState(0);
   const [answer, setAnswer] = useState('');
   const [combo, setCombo] = useState(1);
@@ -90,11 +97,18 @@ export default function Game({ onNavigate, lesson }) {
     setStep(s => s + 1);
   };
 
-  // เล่นจบ node (ถึงหน้า Clear) → mark concept ที่บทนี้สอนเป็น mastery
-  // idempotent: ฟังก์ชันกันซ้ำให้แล้ว เรียกหลายครั้งไม่มีผลข้างเคียง
+  // เล่นจบ node (ถึงหน้า Clear) → mark mastery + นับ streak + แจกดาว
+  // rewardedRef กันแจกซ้ำ (จอ re-render หลายครั้งตอนอยู่หน้า Clear)
+  // await ตามลำดับ: record streak ก่อน (อาจมีโบนัส) แล้วค่อยบวกดาวจากด่าน
+  // เพื่อไม่ให้สอง update ชน profile กันจนดาวหาย
   useEffect(() => {
-    if (STEPS.length > 0 && step > STEPS.length) {
+    if (STEPS.length > 0 && step > STEPS.length && !rewardedRef.current) {
+      rewardedRef.current = true;
       Progress.learn(LESSON.teaches ?? []);
+      (async () => {
+        await recordDailyActivity();
+        await awardStars(earnedStars, 'quiz');
+      })();
     }
   }, [step, STEPS.length]);
 
@@ -126,7 +140,7 @@ export default function Game({ onNavigate, lesson }) {
           </View>
 
           <View style={styles.introStarRow}>
-            <Text style={styles.introStarTxt}>⭐  Your Stars:  1200</Text>
+            <Text style={styles.introStarTxt}>⭐  Your Stars:  {totalStars}</Text>
             <Text style={styles.introRewardTxt}>Max Reward: +{LESSON.maxReward}</Text>
           </View>
 
@@ -148,7 +162,7 @@ export default function Game({ onNavigate, lesson }) {
     const level = computeLevelScore({
       calibrationScore: Progress.calibration() ?? 0,
       quizAccuracyPct: quizPct,
-      consistencyScore: Progress.consistencyScore(),
+      consistencyScore: (Math.min(currentStreak, 10) / 10) * 100,
     });
     return (
       <SafeAreaView style={styles.safe}>
@@ -158,7 +172,7 @@ export default function Game({ onNavigate, lesson }) {
 
           <View style={styles.clearBadgeRow}>
             <View style={[styles.clearBadge, { borderColor: '#E8A020' }]}>
-              <Text style={[styles.clearBadgeTxt, { color: '#E8A020' }]}>⭐ +7</Text>
+              <Text style={[styles.clearBadgeTxt, { color: '#E8A020' }]}>⭐ +{earnedStars}</Text>
             </View>
             <View style={[styles.clearBadge, { borderColor: '#D94040' }]}>
               <Text style={[styles.clearBadgeTxt, { color: '#D94040' }]}>🔥 COMBO {bestCombo}</Text>
@@ -199,7 +213,7 @@ export default function Game({ onNavigate, lesson }) {
           <View style={styles.clearHintRow}>
             <Text style={styles.clearHintTxt}>
               🧑‍🏫  {level.advice}
-              {'\n'}      (Calibration {Progress.calibration() ?? 0}% · Quiz {quizPct}% · Streak {Progress.streakDays()} วัน)
+              {'\n'}      (Calibration {Progress.calibration() ?? 0}% · Quiz {quizPct}% · Streak {currentStreak} วัน)
             </Text>
             {level.pace === 'review' && (
               <Text style={styles.clearHintLink}>      🔴 แนะนำสร้าง Node ทบทวนเพิ่ม</Text>

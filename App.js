@@ -23,6 +23,7 @@ import SettingScreen from './src/screen/SettingScreen';
 import HistoryMap from './src/screen/HistoryMap';
 import ShopScreen from './src/screen/ShopScreen';
 import NavBar from './src/components/NavBar';
+import DailyRewardModal from './src/components/DailyRewardModal';
 
 // แมปหน้า -> แท็บ navbar ที่ active (หน้าไหนไม่อยู่ในนี้ = ไม่มี navbar เช่น scan-loading / game)
 const NAV_ACTIVE = {
@@ -91,6 +92,8 @@ function AppScreens() {
          : <ScanScreen onNavigate={navigate} />}
       </View>
       {navActive && <NavBar active={navActive} onPress={navigate} />}
+      {/* ป๊อปอัปเช็คอินรายวัน — เด้งเองตอนเปิดแอปวันแรกของวัน */}
+      <DailyRewardModal />
     </View>
   );
 }

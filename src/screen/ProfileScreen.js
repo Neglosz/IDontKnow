@@ -5,6 +5,8 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import Ionicons from '@expo/vector-icons/Ionicons';
+import { useAuth } from '../context/AuthContext';
+import { STREAK_BONUSES } from '../data/streak';
 
 const starSrc = require('../../assets/star.png');
 const catSrc = require('../../assets/player_cat-sheet_120.png');
@@ -25,12 +27,6 @@ const KNOWLEDGE = [
 ];
 
 const WEEK_DAYS = ['จ', 'อ', 'พ', 'พฤ', 'ศ', 'ส', 'อา'];
-const STREAK_DAYS = 5;
-
-const BONUSES = [
-    { day: 3, reward: 2, claimed: true },
-    { day: 7, reward: 5, claimed: false },
-];
 
 function SpriteFrame({ source, frameWidth, frameHeight, totalFrames, fps = 8 }) {
     const [frame, setFrame] = useState(0);
@@ -100,13 +96,22 @@ function WeekCell({ day, active, isToday }) {
 }
 
 export default function ProfileScreen({ onNavigate }) {
+    const { characterName, stars, currentStreak } = useAuth();
     const soon = () => Alert.alert('เร็ว ๆ นี้', 'ฟีเจอร์นี้กำลังจัดทำ');
 
-    const nextBonus = BONUSES.find(b => !b.claimed);
-    const daysLeft = nextBonus ? Math.max(nextBonus.day - STREAK_DAYS, 0) : 0;
-    const prevBonusDay = BONUSES.filter(b => b.claimed).slice(-1)[0]?.day ?? 0;
+    const streakDays = currentStreak ?? 0;
+    const displayName = characterName || 'ผู้เล่นใหม่';
+
+    // วันนี้คือคอลัมน์ไหนของสัปดาห์ (จ=0 .. อา=6) — ใช้ไฮไลต์ "วันนี้" + ย้อนหลังตาม streak
+    const todayCol = (new Date().getDay() + 6) % 7;
+
+    // โบนัส: ถือว่า "ได้รับแล้ว" เมื่อ streak ปัจจุบันถึงวันนั้นแล้ว
+    const bonuses = STREAK_BONUSES.map(b => ({ ...b, claimed: streakDays >= b.day }));
+    const nextBonus = bonuses.find(b => !b.claimed);
+    const daysLeft = nextBonus ? Math.max(nextBonus.day - streakDays, 0) : 0;
+    const prevBonusDay = bonuses.filter(b => b.claimed).slice(-1)[0]?.day ?? 0;
     const bonusProgress = nextBonus
-        ? (STREAK_DAYS - prevBonusDay) / (nextBonus.day - prevBonusDay)
+        ? (streakDays - prevBonusDay) / (nextBonus.day - prevBonusDay)
         : 1;
 
     return (
@@ -129,7 +134,7 @@ export default function ProfileScreen({ onNavigate }) {
                     </View>
 
                     <View style={styles.nameRow}>
-                        <Text style={styles.name}>NOBI</Text>
+                        <Text style={styles.name}>{displayName}</Text>
                         <TouchableOpacity onPress={soon}>
                             <Ionicons name="pencil" size={16} color="#452817" />
                         </TouchableOpacity>
@@ -139,7 +144,7 @@ export default function ProfileScreen({ onNavigate }) {
 
                     <View style={styles.scoreBadge}>
                         <Image source={starSrc} style={{ width: 18, height: 18 }} resizeMode="contain" />
-                        <Text style={styles.scoreNum}>1200</Text>
+                        <Text style={styles.scoreNum}>{stars}</Text>
                     </View>
                 </View>
 
@@ -184,7 +189,7 @@ export default function ProfileScreen({ onNavigate }) {
                         </LinearGradient>
                         <View style={styles.streakTextCol}>
                             <View style={styles.streakNumRow}>
-                                <Text style={styles.streakNum}>{STREAK_DAYS}</Text>
+                                <Text style={styles.streakNum}>{streakDays}</Text>
                                 <Text style={styles.streakDayLabel}>วัน</Text>
                             </View>
                             <Text style={styles.streakSub}>เรียนต่อเนื่อง</Text>
@@ -197,8 +202,9 @@ export default function ProfileScreen({ onNavigate }) {
                                 <WeekCell
                                     key={d}
                                     day={d}
-                                    active={i < STREAK_DAYS}
-                                    isToday={i === STREAK_DAYS - 1}
+                                    // ไฮไลต์วันนี้ + ย้อนหลังตามจำนวน streak (ในสัปดาห์นี้)
+                                    active={i <= todayCol && (todayCol - i) < streakDays}
+                                    isToday={i === todayCol}
                                 />
                             ))}
                         </View>
@@ -207,7 +213,7 @@ export default function ProfileScreen({ onNavigate }) {
                     <View style={styles.bonusBox}>
                         <Text style={styles.bonusTitle}>🎁 Streak Bonus</Text>
 
-                        {BONUSES.map(b => (
+                        {bonuses.map(b => (
                             <View key={b.day} style={[styles.bonusRow, b.claimed && styles.bonusRowClaimed]}>
                                 <View style={[styles.bonusDayBadge, b.claimed && styles.bonusDayBadgeClaimed]}>
                                     <Text style={styles.bonusDayNum}>{b.day}</Text>
