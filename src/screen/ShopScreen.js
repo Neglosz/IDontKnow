@@ -1,49 +1,40 @@
 import React, { useState, useEffect, useRef } from 'react';
 import {
     View, Text, Image, TouchableOpacity, ScrollView,
-    StyleSheet, Dimensions, Alert, Animated,
+    StyleSheet, Dimensions, Alert, Animated, ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Ionicons from '@expo/vector-icons/Ionicons';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useAuth } from '../context/AuthContext';
+import { useWardrobe } from '../context/WardrobeContext';
+import DressedCat from '../components/DressedCat';
 
-/* ===== assets ===== */
-const starSrc        = require('../../assets/star.png');
-const catSheet       = require('../../assets/player_cat-sheet_150.png');
-const catGlassesSheet = require('../../assets/CAT_idle_glasses150.png');
+/* ===== assets (chrome เท่านั้น — รูปของในร้านมาจาก Storage bucket 'shop') ===== */
+const starSrc  = require('../../assets/star.png');
 
-const hatIcon   = require('../../assets/hat.png');
-const shirtIcon = require('../../assets/shirt.png');
-const pantIcon  = require('../../assets/pant.png');
-const shoeIcon  = require('../../assets/shoe.png');
-const ringIcon  = require('../../assets/ring.png');
-
-const glassesRed   = require('../../assets/glasses.png');
-const glassesBlack = require('../../assets/glasses_black.png');
-const beleSrc      = require('../../assets/bele.png');
-const hatPump      = require('../../assets/hat_pump.png');
-const hatBear      = require('../../assets/hat_bear_true.png');
-const hatSleeping  = require('../../assets/hat_sleeping.png');
+const hatIcon     = require('../../assets/hat.png');
+const outfitIcon  = require('../../assets/shirt.png');     // ไอคอนเสื้อ ใช้แทนช่อง "ชุด"
+const glassesIcon = require('../../assets/glasses.png');
+const ringIcon    = require('../../assets/ring.png');
 
 const { width: SW } = Dimensions.get('window');
 const PAD  = 20;
 const GAP  = 12;
 const COLS = 4;
 const CELL_W = (SW - PAD * 2 - GAP * (COLS - 1)) / COLS;
+const FOOT_H = 32;   // ความสูงแถบราคา → การ์ดสูง = CELL_W + FOOT_H ให้พื้นที่รูปเป็นจัตุรัสเต็ม
 
 // ระยะจากก้นกรอบตัวละครขึ้นไปถึง "เท้า" ของสไปรท์ (ปรับเลขนี้เลขเดียวเพื่อเลื่อนเงา)
 const FEET_FROM_BOTTOM = -5;
 
 /* ===== ช่องอุปกรณ์รอบตัวละคร ===== */
 const SLOTS = [
-    { key: 'hat',       label: 'Hat',       icon: hatIcon   },
-    { key: 'shirt',     label: 'Shirt',     icon: shirtIcon },
-    { key: 'pant',      label: 'Pant',      icon: pantIcon  },
-    { key: 'shoe',      label: 'Shoe',      icon: shoeIcon  },
-    { key: 'accessory', label: 'Accessory', icon: ringIcon  },
+    { key: 'hat',       label: 'Hat',       icon: hatIcon     },
+    { key: 'outfit',    label: 'Outfit',    icon: outfitIcon  },
+    { key: 'glasses',   label: 'Glasses',   icon: glassesIcon },
+    { key: 'accessory', label: 'Accessory', icon: ringIcon    },
 ];
-const SLOT_TH = { hat: 'หมวก', shirt: 'เสื้อ', pant: 'กางเกง', shoe: 'รองเท้า', accessory: 'เครื่องประดับ' };
+const SLOT_TH = { hat: 'หมวก', outfit: 'ชุด', glasses: 'แว่น', accessory: 'เครื่องประดับ' };
 
 /* ===== ระดับความหายาก (rarity) — กรอบสี + ป้าย ===== */
 const RARITY = {
@@ -51,35 +42,6 @@ const RARITY = {
     rare:   { label: 'หายาก',   color: '#3A8FE8', soft: '#E6F0FB' },
     epic:   { label: 'เอพิค',    color: '#A24DD0', soft: '#F4E9FB' },
 };
-
-/* ===== รายการคอสตูม (mockup) ===== */
-// sheet: ถ้าใส่แล้วเปลี่ยน sprite ของแมว ให้ใส่ sprite sheet ตรงนี้
-const COSTUMES = [
-    { key: 'glasses_red',   name: 'แว่นตา',      src: glassesRed,   slot: 'accessory', price: 300, owned: true,  rarity: 'rare', sheet: catGlassesSheet },
-    { key: 'glasses_black', name: 'แว่นกันแดด',  src: glassesBlack, slot: 'accessory', price: 300, owned: true,  rarity: 'rare' },
-    { key: 'meat',          name: 'หมวกเนื้อ',    src: beleSrc,      slot: 'hat',       price: 550, owned: false, rarity: 'epic',   isNew: true },
-    { key: 'pumpkin',       name: 'หมวกฟักทอง',  src: hatPump,      slot: 'hat',       price: 550, owned: false, rarity: 'rare',   isNew: true },
-    { key: 'bear',          name: 'หมวกหมี',      src: hatBear,      slot: 'hat',       price: 550, owned: false, rarity: 'epic'   },
-    { key: 'sleeping',      name: 'หมวกนอน',      src: hatSleeping,  slot: 'hat',       price: 550, owned: false, rarity: 'common' },
-];
-
-/* ===== sprite-sheet แอนิเมชัน 150x150 x 3 เฟรม ===== */
-function SpriteFrame({ source, size = 150, totalFrames = 3, fps = 3.5 }) {
-    const [frame, setFrame] = useState(0);
-    useEffect(() => {
-        const id = setInterval(() => setFrame(prev => (prev + 1) % totalFrames), 1000 / fps);
-        return () => clearInterval(id);
-    }, [totalFrames, fps]);
-    return (
-        <View style={{ width: size, height: size, overflow: 'hidden' }}>
-            <Image
-                source={source}
-                style={{ width: size * totalFrames, height: size, marginLeft: -size * frame }}
-                resizeMode="cover"
-            />
-        </View>
-    );
-}
 
 /* ===== ช่องอุปกรณ์ (กดได้: มีของ→เลือก, ว่าง→ไปหมวดนั้น) ===== */
 function SlotBox({ icon, label, placeholder, active, onPress }) {
@@ -115,7 +77,7 @@ function CostumeCell({ item, equipped, previewing, onPress }) {
         <TouchableOpacity
             style={[
                 styles.cell,
-                { width: CELL_W, height: CELL_W, borderColor: r.color, backgroundColor: r.soft },
+                { width: CELL_W, height: CELL_W + FOOT_H, borderColor: r.color, backgroundColor: r.soft },
                 previewing && styles.cellPreview,
                 equipped && styles.cellEquipped,
             ]}
@@ -136,7 +98,9 @@ function CostumeCell({ item, equipped, previewing, onPress }) {
                 </View>
             ) : null}
 
-            <Image source={item.src} style={styles.cellImg} resizeMode="contain" />
+            <View style={styles.cellImgWrap}>
+                <Image source={item.src} style={styles.cellImg} resizeMode="contain" />
+            </View>
 
             {equipped ? (
                 <View style={[styles.cellFoot, styles.cellFootEquipped]}>
@@ -229,55 +193,20 @@ function Toast({ data, onHide }) {
 
 export default function ShopScreen({ onNavigate }) {
     // ดาว = total_stars จริงใน Supabase (ผ่าน AuthContext) — ซื้อแล้วหักจริง
-    const { user, stars: coins, spendStars } = useAuth();
-    const [items, setItems]       = useState(COSTUMES);
-    const [equipped, setEquipped] = useState({});   // { slotKey: itemKey }
-    const [preview, setPreview]   = useState(null);  // key ของไอเทมที่กำลังลอง/เลือก
-    const [filter, setFilter]     = useState('all'); // 'all' | slotKey | 'owned'
-    const [toast, setToast]       = useState(null);
-    const [presets, setPresets]   = useState([]);    // ชุดที่บันทึกไว้ [{id, equipped}]
+    const { stars: coins, spendStars } = useAuth();
+    // ตู้เสื้อผ้ากลาง (catalog + ของที่มี + ชุดที่ใส่) — แชร์กับทุกจอผ่าน DressedCat
+    const { items, loading, equipped, itemByKey, isEquipped, addOwned, setEquipped } = useWardrobe();
 
-    // ── ของที่ครอบครอง/สวมใส่: เก็บใน AsyncStorage (cosmetic — ไม่กระทบ economy) ──
-    // RLS ของ inventory เปิดให้ client "อ่าน" อย่างเดียว จึงเก็บฝั่งเครื่องไว้ก่อน
-    const costumesKey = user ? `@costumes:${user.id}` : null;
-    const hydrated = useRef(false);
+    const [preview, setPreview] = useState(null);  // key ของไอเทมที่กำลังลอง/เลือก
+    const [filter, setFilter]   = useState('all'); // 'all' | slotKey | 'owned'
+    const [toast, setToast]     = useState(null);
+    const [presets, setPresets] = useState([]);    // ชุดที่บันทึกไว้ [{id, equipped}]
 
-    useEffect(() => {
-        if (!costumesKey) return;
-        (async () => {
-            try {
-                const raw = await AsyncStorage.getItem(costumesKey);
-                if (raw) {
-                    const saved = JSON.parse(raw);   // { owned: string[], equipped: {} }
-                    if (Array.isArray(saved.owned)) {
-                        setItems(list => list.map(i =>
-                            saved.owned.includes(i.key) ? { ...i, owned: true } : i));
-                    }
-                    if (saved.equipped) setEquipped(saved.equipped);
-                }
-            } catch {}
-            hydrated.current = true;
-        })();
-    }, [costumesKey]);
-
-    // เซฟทุกครั้งที่ของที่มี/ชุดที่ใส่เปลี่ยน (หลัง hydrate เสร็จ กันทับค่าว่าง)
-    useEffect(() => {
-        if (!costumesKey || !hydrated.current) return;
-        const owned = items.filter(i => i.owned).map(i => i.key);
-        AsyncStorage.setItem(costumesKey, JSON.stringify({ owned, equipped })).catch(() => {});
-    }, [items, equipped, costumesKey]);
-
-    const itemByKey = (key) => items.find(i => i.key === key) || null;
     const previewItem = itemByKey(preview);
 
-    // ของที่จะโชว์ในแต่ละ slot: ถ้ากำลังลองไอเทมของ slot นั้น ให้โชว์ตัวลอง ไม่งั้นโชว์ที่สวมอยู่
+    // ของที่จะโชว์ในแต่ละช่องอุปกรณ์ข้างตัวละคร (ลองอยู่ → โชว์ตัวลอง, ไม่งั้นโชว์ที่ใส่)
     const slotItem = (slotKey) =>
         (previewItem && previewItem.slot === slotKey) ? previewItem : itemByKey(equipped[slotKey]);
-
-    // sprite ของแมว: ลองแว่น → เห็นบนตัวสด, ไม่งั้นใช้ของที่ใส่อยู่
-    const catSrc = previewItem?.sheet ?? itemByKey(equipped.accessory)?.sheet ?? catSheet;
-
-    const isEquipped = (item) => !!item && equipped[item.slot] === item.key;
 
     // ===== ดาวเด้งเมื่อยอดเปลี่ยน =====
     const coinScale = useRef(new Animated.Value(1)).current;
@@ -313,7 +242,7 @@ export default function ShopScreen({ onNavigate }) {
             Alert.alert('ดาวไม่พอ', `ต้องใช้ ${item.price} ดาว แต่คุณมี ${res.balance ?? coins} ดาว`);
             return;
         }
-        setItems(list => list.map(i => i.key === item.key ? { ...i, owned: true } : i));
+        addOwned(item.key);
         setEquipped(e => ({ ...e, [item.slot]: item.key }));
         setPreview(item.key);
         setToast(`ซื้อ “${item.name}” สำเร็จ!`);
@@ -376,7 +305,7 @@ export default function ShopScreen({ onNavigate }) {
                 <View style={styles.stage}>
                     <View style={styles.dressRow}>
                         <View style={styles.sideCol}>
-                            {SLOTS.filter(s => s.key === 'hat' || s.key === 'shirt').map(s => (
+                            {SLOTS.filter(s => s.key === 'hat' || s.key === 'outfit').map(s => (
                                 <SlotBox
                                     key={s.key}
                                     label={s.label}
@@ -392,12 +321,12 @@ export default function ShopScreen({ onNavigate }) {
                             <View style={styles.stageRug} />
                             <View style={styles.stageShadow} />
                             <View style={styles.catWrap}>
-                                <SpriteFrame source={catSrc} size={150} totalFrames={3} fps={3.5} />
+                                <DressedCat size={150} preview={previewItem} />
                             </View>
                         </View>
 
                         <View style={styles.sideCol}>
-                            {SLOTS.filter(s => s.key === 'pant' || s.key === 'shoe').map(s => (
+                            {SLOTS.filter(s => s.key === 'glasses' || s.key === 'accessory').map(s => (
                                 <SlotBox
                                     key={s.key}
                                     label={s.label}
@@ -408,16 +337,6 @@ export default function ShopScreen({ onNavigate }) {
                                 />
                             ))}
                         </View>
-                    </View>
-
-                    <View style={styles.accessoryWrap}>
-                        <SlotBox
-                            label="Accessory"
-                            icon={slotItem('accessory')?.src ?? ringIcon}
-                            placeholder={!slotItem('accessory')}
-                            active={previewItem?.slot === 'accessory'}
-                            onPress={() => onSlotPress('accessory')}
-                        />
                     </View>
 
                     {/* แถบแอ็กชันชุด (footer ในกรอบเวที) */}
@@ -474,7 +393,12 @@ export default function ShopScreen({ onNavigate }) {
                     contentContainerStyle={styles.grid}
                     showsVerticalScrollIndicator={false}
                 >
-                    {shown.length === 0 ? (
+                    {loading ? (
+                        <View style={styles.emptyWrap}>
+                            <ActivityIndicator size="large" color="#C47A30" />
+                            <Text style={styles.emptySub}>กำลังโหลดร้านค้า...</Text>
+                        </View>
+                    ) : shown.length === 0 ? (
                         <View style={styles.emptyWrap}>
                             <View style={styles.emptyIconCircle}>
                                 <Ionicons name="cube-outline" size={38} color="#C9BCA3" />
@@ -542,7 +466,7 @@ const styles = StyleSheet.create({
         position: 'absolute', bottom: FEET_FROM_BOTTOM, alignSelf: 'center',
         width: 78, height: 15, borderRadius: 8, backgroundColor: 'rgba(74,46,18,0.20)',
     },
-    catWrap: { width: 150, height: 150, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
+    catWrap: { width: 150, height: 150, alignItems: 'center', justifyContent: 'center' },
 
     slotCol: { alignItems: 'center', gap: 4 },
     slotBox: {
@@ -594,9 +518,11 @@ const styles = StyleSheet.create({
     gridScroll: { flex: 1 },
     grid: { flexDirection: 'row', flexWrap: 'wrap', gap: GAP, paddingHorizontal: PAD, paddingTop: 12, paddingBottom: 24 },
     cell: {
-        borderRadius: 14, borderWidth: 2, alignItems: 'center', justifyContent: 'center', position: 'relative', overflow: 'hidden',
+        borderRadius: 14, borderWidth: 2, position: 'relative', overflow: 'hidden',
     },
-    cellImg: { width: '58%', height: '58%' },
+    // กรอบของรูปไอเทมเอง (กินพื้นที่ส่วนบน เหลือล่างให้แถบราคา)
+    cellImgWrap: { flex: 1, width: '100%', alignItems: 'center', justifyContent: 'center', padding: 4 },
+    cellImg: { width: '100%', height: '100%' },
     cellPreview: { borderWidth: 3, borderColor: '#C47A30' },
     cellEquipped: { borderColor: '#3F9E4D', borderWidth: 3 },
 
@@ -613,14 +539,14 @@ const styles = StyleSheet.create({
     cornerOwned: { backgroundColor: '#B8A98C' },
 
     cellFoot: {
-        position: 'absolute', bottom: 0, left: 0, right: 0, height: 22,
-        flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 3,
+        width: '100%', height: FOOT_H,
+        flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5,
         backgroundColor: 'rgba(255,255,255,0.82)',
     },
-    cellStar: { width: 13, height: 13 },
-    cellPrice: { fontFamily: 'Jersey', fontSize: 15, fontWeight: '900', color: '#7A4E13' },
+    cellStar: { width: 17, height: 17 },
+    cellPrice: { fontFamily: 'Jersey', fontSize: 19, fontWeight: '900', color: '#7A4E13' },
     cellFootEquipped: { backgroundColor: '#3F9E4D' },
-    cellFootEquippedText: { fontFamily: 'PKNonthaburi', fontSize: 14, fontWeight: '700', color: '#FFFFFF' },
+    cellFootEquippedText: { fontFamily: 'PKNonthaburi', fontSize: 16, fontWeight: '700', color: '#FFFFFF' },
 
     emptyWrap: { width: '100%', alignItems: 'center', paddingVertical: 44, gap: 6 },
     emptyIconCircle: {

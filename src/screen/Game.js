@@ -14,6 +14,7 @@ import {
   Platform,
   TouchableWithoutFeedback,
   Keyboard,
+  StatusBar,
 } from 'react-native';
 import { Esp32Board, SensorModule, ESP_VB, ESP_PADS, SENSOR_VB, SENSOR_PADS } from './HardwareArt';
 import Svg, { Path } from 'react-native-svg';
@@ -21,9 +22,11 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import TraceWidthSim from './TraceWidthSim';
 import { SequenceSim, SelectSim, DiagnoseSim, computeLevelScore, aggregateQuizAccuracy } from './simEngine';
 import BlockCodeSim from './SoftwareGame';
+import { MiniGame, MINIGAME_KINDS } from './MiniGames';
 import { FALLBACK_LESSON } from '../data/lessons';
 import { Progress } from '../data/progress';
 import { useAuth } from '../context/AuthContext';
+import DressedCat from '../components/DressedCat';
 
 const { width: SW } = Dimensions.get('window');
 
@@ -57,6 +60,12 @@ const STEP_BADGE = {
   sim:       { icon: '⚔️',  label: 'SIM' },
   blockcode: { icon: '</>', label: 'CODE' },
   boss:      { icon: '👹',  label: 'BOSS' },
+  wire:      { icon: '🔌', label: 'WIRE' },
+  sort:      { icon: '🗂', label: 'SORT' },
+  sequence:  { icon: '🔢', label: 'SEQ' },
+  select:    { icon: '🎯', label: 'PICK' },
+  diagnose:  { icon: '🔍', label: 'DEBUG' },
+  tune:      { icon: '🎛', label: 'TUNE' },
 };
 
 function useSpriteAnim(frameCount, fps = 8) {
@@ -116,6 +125,7 @@ export default function Game({ onNavigate, lesson }) {
   if (step === 0) {
     return (
       <SafeAreaView style={styles.safe}>
+        <StatusBar barStyle="light-content" backgroundColor="#0e0e1a" />
         <View style={styles.introRoot}>
           <Text style={styles.chapterLabel}>{LESSON.chapter}</Text>
           <Text style={styles.chapterIconRow}>⚙️  💰</Text>
@@ -166,6 +176,7 @@ export default function Game({ onNavigate, lesson }) {
     });
     return (
       <SafeAreaView style={styles.safe}>
+        <StatusBar barStyle="light-content" backgroundColor="#0e0e1a" />
         <ScrollView contentContainerStyle={styles.clearRoot} showsVerticalScrollIndicator={false}>
           <Text style={styles.clearTitle}>{LESSON.chapter} Clear !</Text>
           <Text style={styles.clearParty}>🎉</Text>
@@ -228,26 +239,31 @@ export default function Game({ onNavigate, lesson }) {
     );
   }
 
-  // ── เปิด challenge (Tune / Sequence / Select / Diagnose / BlockCode) ────────
+  // ── เปิด challenge (เครื่องเกมกลาง / BlockCode / sim เก่า) ──────────────────
   if (activeSim) {
     const enc = STEPS[step - 1];
     const close = () => setActiveSim(null);
     const win   = () => { setActiveSim(null); goNext(); };
     let sim = null;
-    if (activeSim === 'tune')
+    const isMini = MINIGAME_KINDS.includes(enc.kind);
+    if (isMini)     // เครื่องเกมกลาง data-driven (ธีมกระดาษสว่างเข้าแอป)
+      sim = <MiniGame step={enc} onSuccess={win} onClose={close} />;
+    else if (activeSim === 'blockcode') sim = <BlockCodeSim level={enc} onSuccess={win} onClose={close} />;
+    // ── ด่าน sim รุ่นเก่า (kind:'sim') — เนื้อหา hardcode คงไว้เพื่อ backward-compat
+    else if (activeSim === 'tune')
       sim = <TraceWidthSim current={enc.current} questId={enc.questId}
               npcName={enc.npc} npcEmoji={enc.emoji} onSuccess={win} onClose={close} />;
     else if (activeSim === 'sequence')  sim = <SequenceSim  onSuccess={win} onClose={close} />;
     else if (activeSim === 'select')    sim = <SelectSim    onSuccess={win} onClose={close} />;
     else if (activeSim === 'diagnose')  sim = <DiagnoseSim  onSuccess={win} onClose={close} />;
-    else if (activeSim === 'blockcode') sim = <BlockCodeSim level={enc} onSuccess={win} onClose={close} />;
-    return <SafeAreaView style={styles.safe}>{sim}</SafeAreaView>;
+    return <SafeAreaView style={isMini ? styles.safeLight : styles.safe}><StatusBar barStyle={isMini ? 'dark-content' : 'light-content'} backgroundColor={isMini ? '#F7F1E5' : '#0e0e1a'} />{sim}</SafeAreaView>;
   }
 
   // ── Boss: Circuit puzzle (Connect) — full screen ───────────────────────────
   if (circuitOpen) {
     return (
       <SafeAreaView style={styles.safe}>
+        <StatusBar barStyle="light-content" backgroundColor="#0e0e1a" />
         <CircuitPuzzle
           onSuccess={() => { setCircuitOpen(false); goNext(); }}
           onClose={() => setCircuitOpen(false)}
@@ -262,6 +278,7 @@ export default function Game({ onNavigate, lesson }) {
 
   return (
     <SafeAreaView style={styles.safe}>
+      <StatusBar barStyle="light-content" backgroundColor="#0e0e1a" />
       <KeyboardAvoidingView
         style={styles.root}
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
@@ -282,11 +299,7 @@ export default function Game({ onNavigate, lesson }) {
           </View>
           <View style={styles.playerPos}>
             <View style={styles.catClip}>
-              <Image
-                source={require('../../assets/player_cat-sheet.png')}
-                style={[styles.catSheet, { transform: [{ translateX: -catFrame * CAT_W }] }]}
-                resizeMode="stretch"
-              />
+              <DressedCat size={CAT_W} fps={CAT_FPS} />
             </View>
           </View>
           <View style={styles.bossPos}>
@@ -335,6 +348,12 @@ export default function Game({ onNavigate, lesson }) {
           ) : enc.kind === 'blockcode' ? (
             <TouchableOpacity style={styles.acceptBtn} activeOpacity={0.8} onPress={() => setActiveSim('blockcode')}>
               <Text style={styles.acceptBtnTxt}>{'</>'}  เขียนโค้ด  ▶</Text>
+            </TouchableOpacity>
+          ) : MINIGAME_KINDS.includes(enc.kind) ? (
+            <TouchableOpacity style={styles.acceptBtn} activeOpacity={0.8} onPress={() => setActiveSim(enc.kind)}>
+              <Text style={styles.acceptBtnTxt}>
+                {enc.boss ? '👹  เผชิญบอส  ▶' : '⚔️  เริ่มเกม  ▶'}
+              </Text>
             </TouchableOpacity>
           ) : (
             <TouchableOpacity style={styles.acceptBtn} activeOpacity={0.8} onPress={() => setActiveSim(enc.sim)}>
@@ -1142,6 +1161,7 @@ const cp = StyleSheet.create({
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: '#0e0e1a' },
+  safeLight: { flex: 1, backgroundColor: '#F7F1E5' },
   introRoot: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 28, gap: 12 },
   chapterLabel: { color: '#fff', fontSize: 22, fontWeight: 'bold', letterSpacing: 2 },
   chapterIconRow: { fontSize: 28 },
@@ -1182,7 +1202,7 @@ const styles = StyleSheet.create({
   starEmoji: { fontSize: 14 },
   starCount: { fontWeight: 'bold', fontSize: 15, color: '#555' },
   playerPos: { position: 'absolute', left: SW * 0.13, bottom: GROUND_PX },
-  catClip: { width: CAT_W, height: CAT_H, overflow: 'hidden' },
+  catClip: { width: CAT_W, height: CAT_H },
   catSheet: { width: CAT_W * CAT_FRAMES, height: CAT_H },
   bossPos: { position: 'absolute', right: SW * 0.10, bottom: GROUND_PX },
   orcClip: { width: ORC_W, height: ORC_H, overflow: 'hidden' },

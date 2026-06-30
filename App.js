@@ -6,6 +6,7 @@ import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { useFonts } from 'expo-font';
 
 import { AuthProvider, useAuth } from './src/context/AuthContext';
+import { WardrobeProvider } from './src/context/WardrobeContext';
 import SignInScreen from './src/screen/SignInScreen';
 import SignUpScreen from './src/screen/SignUpScreen';
 import ForgotPasswordScreen from './src/screen/ForgotPasswordScreen';
@@ -111,7 +112,9 @@ export default function App() {
       <SafeAreaProvider>
         <View style={{ flex: 1, backgroundColor: '#120E08' }}>
           <AuthProvider>
-            <AppScreens />
+            <WardrobeProvider>
+              <AppScreens />
+            </WardrobeProvider>
           </AuthProvider>
         </View>
       </SafeAreaProvider>

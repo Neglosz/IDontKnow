@@ -7,9 +7,9 @@ import { LinearGradient } from 'expo-linear-gradient';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { useAuth } from '../context/AuthContext';
 import { STREAK_BONUSES } from '../data/streak';
+import DressedCat from '../components/DressedCat';
 
 const starSrc = require('../../assets/star.png');
-const catSrc = require('../../assets/player_cat-sheet_120.png');
 
 // gradient ของไฟ — ปรับสี/ทิศได้ตรงนี้ที่เดียว
 const FIRE_GRAD = ['#F4BB4A', '#DE7A1A'];        // วงกลมใหญ่ (เข้มกว่า)
@@ -130,7 +130,7 @@ export default function ProfileScreen({ onNavigate }) {
 
                 <View style={styles.avatarSection}>
                     <View style={styles.avatarWrap}>
-                        <SpriteFrame source={catSrc} frameWidth={100} frameHeight={100} totalFrames={3} fps={3.5} />
+                        <DressedCat size={100} />
                     </View>
 
                     <View style={styles.nameRow}>
@@ -279,7 +279,6 @@ const styles = StyleSheet.create({
         height: 100,
         alignItems: 'center',
         justifyContent: 'center',
-        overflow: 'hidden',
         marginBottom: 8,
     },
     nameRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 2 },

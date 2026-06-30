@@ -33,6 +33,7 @@ create table if not exists public.profiles (
   current_streak integer not null default 0,
   best_streak    integer not null default 0,
   last_active_date date,
+  is_admin       boolean not null default false,  -- admin = แก้ catalog ร้านค้าได้ (เว็บ admin เฟส B)
   created_at     timestamptz not null default now(),
   updated_at     timestamptz not null default now()
 );
@@ -198,11 +199,16 @@ create table if not exists public.content_library (
 -- 9) SHOP & INVENTORY
 -- ============================================================================
 create table if not exists public.shop_items (
-  id        text primary key,                   -- 'glasses', 'hat_pump', ...
-  name_th   text not null,
-  slot      text not null,                      -- 'hat' | 'glasses' | 'shirt' | ...
-  price     integer not null default 0,
-  is_active boolean not null default true
+  id         text primary key,                  -- 'glasses', 'hat_pump', ...
+  name_th    text not null,
+  slot       text not null,                     -- 'hat' | 'glasses' | 'shirt' | ...
+  price      integer not null default 0,
+  rarity     text    not null default 'common', -- 'common' | 'rare' | 'epic'
+  icon_path  text,                              -- path รูปไอคอนใน storage bucket 'shop'
+  sheet_path text,                              -- sprite-sheet สวมบนแมว (ถ้ามี)
+  is_new     boolean not null default false,    -- ป้าย NEW ในร้าน
+  sort_order integer not null default 0,        -- ลำดับการแสดงในร้าน
+  is_active  boolean not null default true
 );
 
 create table if not exists public.inventory (
@@ -237,6 +243,10 @@ create policy "own profile update" on public.profiles for update using (auth.uid
 -- ตารางอ่านอย่างเดียวสำหรับทุกคนที่ล็อกอิน (catalog/seed)
 create policy "read disciplines" on public.disciplines for select to authenticated using (true);
 create policy "read shop"        on public.shop_items  for select to authenticated using (true);
+-- admin จัดการ catalog ร้านค้าได้ (insert/update/delete) — สำหรับเว็บ admin (เฟส B)
+create policy "admin manage shop" on public.shop_items for all
+  using      (exists (select 1 from public.profiles p where p.id = auth.uid() and p.is_admin))
+  with check (exists (select 1 from public.profiles p where p.id = auth.uid() and p.is_admin));
 create policy "read approved content"
   on public.content_library for select to authenticated using (approved = true);
 

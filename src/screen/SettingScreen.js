@@ -6,8 +6,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { useAuth } from '../context/AuthContext';
-
-const catSrc = require('../../assets/player_cat-sheet.png');
+import DressedCat from '../components/DressedCat';
 
 // ---- ค่า mockup ทั้งหมด ----
 const MOCK = {
@@ -187,7 +186,7 @@ export default function SettingScreen({ onNavigate }) {
                 {/* Profile row */}
                 <View style={styles.profileRow}>
                     <View style={styles.avatarWrap}>
-                        <SpriteFrame source={catSrc} frameWidth={80} frameHeight={80} totalFrames={3} fps={3.5} scale={0.72} />
+                        <DressedCat size={58} />
                     </View>
                     <View style={styles.profileTextCol}>
                         <Text style={styles.profileName}>{characterName || 'ผู้เล่นใหม่'}</Text>
@@ -428,7 +427,6 @@ const styles = StyleSheet.create({
         height: 58,
         alignItems: 'center',
         justifyContent: 'center',
-        overflow: 'hidden',
     },
     profileTextCol: { justifyContent: 'center' },
     profileName: {

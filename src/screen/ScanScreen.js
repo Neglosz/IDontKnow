@@ -14,9 +14,9 @@ import { LinearGradient } from 'expo-linear-gradient';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { useAuth } from '../context/AuthContext';
+import DressedCat from '../components/DressedCat';
 
 const hippoSrc = require('../../assets/hippo.png');
-const catSrc = require('../../assets/player_cat-sheet_120.png');
 const starSrc = require('../../assets/star.png');
 
 function SpriteFrame({ source, frameWidth, frameHeight, totalFrames, fps = 8 }) {
@@ -245,13 +245,7 @@ export default function ScanScreen({ onNavigate }) {
                             name="NOBI"
                             avatar={
                                 <View style={styles.catWrap}>
-                                    <SpriteFrame
-                                        source={catSrc}
-                                        frameWidth={120}
-                                        frameHeight={120}
-                                        totalFrames={3}
-                                        fps={3.5}
-                                    />
+                                    <DressedCat size={120} />
                                 </View>
                             }
                         >

@@ -1,33 +1,12 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity,
-  Image, StyleSheet, Alert,
+  StyleSheet, Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useAuth } from '../context/AuthContext';
-
-const catSrc = require('../../assets/player_cat-sheet_120.png');
-const TOTAL_FRAMES = 3;
-const DISPLAY = 160;
-const FPS = 6;
-
-function CatSprite() {
-  const [frame, setFrame] = useState(0);
-  useEffect(() => {
-    const id = setInterval(() => setFrame(f => (f + 1) % TOTAL_FRAMES), 1000 / FPS);
-    return () => clearInterval(id);
-  }, []);
-  return (
-    <View style={{ width: DISPLAY, height: DISPLAY, overflow: 'hidden' }}>
-      <Image
-        source={catSrc}
-        style={{ width: DISPLAY * TOTAL_FRAMES, height: DISPLAY, marginLeft: -DISPLAY * frame }}
-        resizeMode="cover"
-      />
-    </View>
-  );
-}
+import DressedCat from '../components/DressedCat';
 
 const DEFAULT_NAME = 'NOBI';
 const MAX_LEN = 12;
@@ -63,7 +42,7 @@ export default function CreateCharacterScreen({ onBack, onDone }) {
 
         {/* Cat sprite */}
         <View style={s.catWrap}>
-          <CatSprite />
+          <DressedCat size={160} />
         </View>
 
         {/* Character name display */}

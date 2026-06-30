@@ -5,6 +5,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { LinearGradient } from 'expo-linear-gradient';
+import Svg, { Path } from 'react-native-svg';
 import {
     TOPICS, computeTiers, computeStatus,
     firstAvailableId, missingPrereqNode,
@@ -59,22 +60,6 @@ function SkillNode({ id, node, status, selected, onPress }) {
     );
 }
 
-const VLine = ({ color, height }) => (
-    <View style={{ alignSelf: 'center', width: 3, height, backgroundColor: color }} />
-);
-
-function TierRow({ label, children }) {
-    return (
-        <View style={styles.tierRow}>
-            <View style={styles.tierBg} pointerEvents="none">
-                <Text style={styles.tierLabel}>{label}</Text>
-                <View style={styles.tierDivider} />
-            </View>
-            {children}
-        </View>
-    );
-}
-
 export default function SkillTreeScreen({ onNavigate }) {
     const TABS = TOPICS.map(t => t.th);
     const [activeTab, setActiveTab] = useState(TABS[0]);
@@ -85,12 +70,19 @@ export default function SkillTreeScreen({ onNavigate }) {
     // mastery = concept ที่ผู้เล่น "รู้แล้ว" — มาจาก store กลาง (calibration / เล่นจบ node)
     // อยู่รอดข้ามหน้าจอ และ re-render เองเมื่อเปลี่ยน → dynamic skill tree
     const mastery = useMastery();
-    const status = computeStatus(NODES, mastery);
+    // 🧪 โหมดทดสอบ: ปลดล็อกทุก node ให้กดเข้าเล่นได้หมด (ยังไม่เก็บค่า/ไม่ gate)
+    //    ปิดเมื่อพร้อมใช้จริง → เปลี่ยนเป็น false แล้วระบบจะ gate ตาม mastery ตามเดิม
+    const TEST_UNLOCK_ALL = true;
+    const realStatus = computeStatus(NODES, mastery);
+    const status = TEST_UNLOCK_ALL
+        ? Object.fromEntries(NODES.map(n => [n.id, n.steps?.length ? 'available' : realStatus[n.id]]))
+        : realStatus;
     const tiers = computeTiers(NODES);
     const byId = Object.fromEntries(NODES.map(n => [n.id, n]));
     const DEFAULT_SELECTED = firstAvailableId(NODES, mastery);
 
     const [selectedId, setSelectedId] = useState(DEFAULT_SELECTED);
+    const [treeW, setTreeW] = useState(0);   // ความกว้างพื้นที่วาด tree (วัดจริง)
 
     // เปลี่ยนแท็บ → เด้งไปเลือก node เริ่มต้น (frontier) ของหัวข้อนั้น
     const switchTab = (tab) => {
@@ -173,25 +165,93 @@ export default function SkillTreeScreen({ onNavigate }) {
                     contentContainerStyle={styles.treeContent}
                     showsVerticalScrollIndicator={false}
                 >
-                    {tiers.map((row, ti) => (
-                        <React.Fragment key={ti}>
-                            {ti > 0 && <VLine color={'#B7AC98'} height={22} />}
-                            <TierRow label={`T${ti}`}>
-                                <View style={styles.tierNodes}>
-                                    {row.map(n => (
-                                        <SkillNode
-                                            key={n.id}
-                                            id={n.id}
-                                            node={n}
-                                            status={status[n.id]}
-                                            selected={selectedId === n.id}
-                                            onPress={setSelectedId}
-                                        />
-                                    ))}
-                                </View>
-                            </TierRow>
-                        </React.Fragment>
-                    ))}
+                    {(() => {
+                        // ── กราฟ: concept → node ที่สอน, แล้วหาพ่อ/ลูกของแต่ละ node ────────
+                        const teacherOf = {};
+                        NODES.forEach(n => (n.teaches || []).forEach(c => { teacherOf[c] = n.id; }));
+                        const parentsOf = {}, childrenOf = {};
+                        NODES.forEach(n => { childrenOf[n.id] = []; });
+                        NODES.forEach(n => {
+                            parentsOf[n.id] = (n.requires || []).map(c => teacherOf[c]).filter(Boolean);
+                            parentsOf[n.id].forEach(p => childrenOf[p] && childrenOf[p].push(n.id));
+                        });
+
+                        // ── จัดเรียง node ในแต่ละ tier ให้ "ลูกอยู่ใกล้พ่อ" → เส้นไขว้น้อยสุด ──
+                        const rows = tiers.map(r => r.slice());
+                        const idxOf = row => { const m = {}; row.forEach((n, i) => { m[n.id] = i; }); return m; };
+                        const bary = (id, rel, ix, fb) => {
+                            const a = (rel[id] || []).map(k => ix[k]).filter(v => v != null);
+                            return a.length ? a.reduce((s, v) => s + v, 0) / a.length : fb;
+                        };
+                        for (let sweep = 0; sweep < 4; sweep++) {
+                            for (let i = 1; i < rows.length; i++) {
+                                const ix = idxOf(rows[i - 1]);
+                                rows[i] = rows[i].map((n, o) => ({ n, o }))
+                                    .sort((a, b) => (bary(a.n.id, parentsOf, ix, a.o) - bary(b.n.id, parentsOf, ix, b.o)) || a.o - b.o)
+                                    .map(x => x.n);
+                            }
+                            for (let i = rows.length - 2; i >= 0; i--) {
+                                const ix = idxOf(rows[i + 1]);
+                                rows[i] = rows[i].map((n, o) => ({ n, o }))
+                                    .sort((a, b) => (bary(a.n.id, childrenOf, ix, a.o) - bary(b.n.id, childrenOf, ix, b.o)) || a.o - b.o)
+                                    .map(x => x.n);
+                            }
+                        }
+
+                        // ── วางพิกัดจริงจากลำดับที่จัดแล้ว ──────────────────────────────────
+                        const V_STEP = 132;                 // ระยะแนวตั้งระหว่าง tier (center→center)
+                        const TOP = NODE / 2 + 12;
+                        const contentH = TOP + Math.max(0, rows.length - 1) * V_STEP + NODE / 2 + 16;
+                        const pos = {};
+                        rows.forEach((row, ti) => {
+                            const n = row.length;
+                            row.forEach((node, j) => {
+                                pos[node.id] = { x: (treeW || 1) * (j + 1) / (n + 1), y: TOP + ti * V_STEP };
+                            });
+                        });
+
+                        const edges = [];
+                        NODES.forEach(n => (n.requires || []).forEach(c => {
+                            const p = teacherOf[c];
+                            if (p && pos[p] && pos[n.id])
+                                edges.push({ from: pos[p], to: pos[n.id], fromId: p, toId: n.id, key: p + '>' + n.id });
+                        }));
+                        const isHot = ed => ed.fromId === selectedId || ed.toId === selectedId;
+                        const drawOrder = edges.slice().sort((a, b) => (isHot(a) ? 1 : 0) - (isHot(b) ? 1 : 0));
+
+                        return (
+                            <View
+                                style={{ width: '100%', height: contentH }}
+                                onLayout={e => { const w = e.nativeEvent.layout.width; if (w && Math.abs(w - treeW) > 1) setTreeW(w); }}
+                            >
+                                {treeW > 0 && (
+                                    <Svg pointerEvents="none" width={treeW} height={contentH} style={StyleSheet.absoluteFill}>
+                                        {drawOrder.map(ed => {
+                                            const pby = ed.from.y + NODE / 2, cty = ed.to.y - NODE / 2;
+                                            const c1 = pby + (cty - pby) * 0.5;   // เส้นโค้งแนวตั้งนุ่ม ๆ
+                                            const d = `M ${ed.from.x} ${pby} C ${ed.from.x} ${c1}, ${ed.to.x} ${c1}, ${ed.to.x} ${cty}`;
+                                            const hot = isHot(ed);
+                                            return <Path key={ed.key} d={d}
+                                                stroke={hot ? '#C8972F' : '#D2C6B0'} strokeWidth={hot ? 3.5 : 2.5}
+                                                fill="none" strokeLinecap="round" />;
+                                        })}
+                                    </Svg>
+                                )}
+                                {treeW > 0 && rows.map((_, ti) => (
+                                    <Text key={'lbl' + ti} style={[styles.tierLabelAbs, { top: TOP + ti * V_STEP - 9 }]}>T{ti}</Text>
+                                ))}
+                                {treeW > 0 && rows.flat().map(n => {
+                                    const p = pos[n.id];
+                                    return (
+                                        <View key={n.id} style={{ position: 'absolute', left: p.x - NODE / 2, top: p.y - NODE / 2 }}>
+                                            <SkillNode id={n.id} node={n} status={status[n.id]}
+                                                selected={selectedId === n.id} onPress={setSelectedId} />
+                                        </View>
+                                    );
+                                })}
+                            </View>
+                        );
+                    })()}
                 </ScrollView>
 
                 <Animated.View style={[styles.panel, { opacity: fade }]}>
@@ -320,6 +380,11 @@ const styles = StyleSheet.create({
     tierLabel: {
         width: 30,
         fontFamily: 'Jersey', fontSize: 18, fontWeight: '900',
+        color: '#8B7E6A', letterSpacing: 0.5,
+    },
+    tierLabelAbs: {
+        position: 'absolute', left: 0,
+        fontFamily: 'Jersey', fontSize: 16, fontWeight: '900',
         color: '#8B7E6A', letterSpacing: 0.5,
     },
     tierDivider: { flex: 1, height: 1.5, backgroundColor: '#B7AC98', opacity: 0.6 },
